@@ -7,7 +7,7 @@ import ShareModal from './ShareModal'
 
 // API base client setup matching AuthContext
 const api = axios.create({
-  baseURL: '',
+  baseURL: import.meta.env.VITE_API_URL || '',
   headers: {
     'Content-Type': 'application/json'
   }
@@ -217,7 +217,8 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
     try {
       // Post to public shared message sending endpoint
-      const response = await fetch(`/api/chat/shared/${sessionId}/send`, {
+      const baseUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:10000"
+      const response = await fetch(`${baseUrl}/api/chat/shared/${sessionId}/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

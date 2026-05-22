@@ -408,9 +408,11 @@ export const ChatProvider = ({ children }) => {
     const abortController = new AbortController()
     abortControllerRef.current = abortController
 
+    const baseUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:10000"
+
     try {
       // Use raw fetch for handling stream tokens with bearer auth
-      const response = await fetch(`/api/chat/sessions/${activeSessionId}/send`, {
+      const response = await fetch(`${baseUrl}/api/chat/sessions/${activeSessionId}/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -637,8 +639,10 @@ export const ChatProvider = ({ children }) => {
     const abortController = new AbortController()
     abortControllerRef.current = abortController
 
+    const baseUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:10000"
+
     try {
-      const response = await fetch(`/api/chat/messages/${userMessageId}/regenerate`, {
+      const response = await fetch(`${baseUrl}/api/chat/messages/${userMessageId}/regenerate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
