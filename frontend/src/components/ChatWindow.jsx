@@ -1376,8 +1376,16 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
               <div className="w-full">
                 {renderAssistantMessage({ id: 'streaming', content: streamingMessage })}
               </div>
-              <span className="text-[10px] text-butter-300 font-light mt-1.5 pl-1 font-sans">
-                Maya
+              <span className="text-[10px] text-butter-300 font-light mt-1.5 font-sans flex items-center gap-1.5 select-none w-full justify-start pl-1">
+                <span className="truncate max-w-[100px] sm:max-w-[150px] block" title="Maya">
+                  Maya
+                </span>
+                <span className="text-[8px] shrink-0">•</span>
+                <span className="flex items-center gap-0.5 opacity-50 cursor-not-allowed transition-opacity"><Copy className="w-3 h-3" /> Copy</span>
+                <span className="text-[8px] shrink-0">•</span>
+                <span className="flex items-center gap-0.5 opacity-50 cursor-not-allowed transition-opacity"><Volume2 className="w-3 h-3" /> Speak</span>
+                <span className="text-[8px] shrink-0">•</span>
+                <span className="flex items-center gap-0.5 opacity-50 cursor-not-allowed transition-opacity"><CornerUpLeft className="w-3 h-3" /> Reply</span>
               </span>
             </div>
           )}
@@ -1392,8 +1400,16 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
                   <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
                 </div>
               </div>
-              <span className="text-[10px] text-butter-300 font-light mt-1.5 pl-1 font-sans select-none">
-                Maya
+              <span className="text-[10px] text-butter-300 font-light mt-1.5 font-sans flex items-center gap-1.5 select-none w-full justify-start pl-1">
+                <span className="truncate max-w-[100px] sm:max-w-[150px] block" title="Maya">
+                  Maya
+                </span>
+                <span className="text-[8px] shrink-0">•</span>
+                <span className="flex items-center gap-0.5 opacity-30 cursor-not-allowed"><Copy className="w-3 h-3" /> Copy</span>
+                <span className="text-[8px] shrink-0">•</span>
+                <span className="flex items-center gap-0.5 opacity-30 cursor-not-allowed"><Volume2 className="w-3 h-3" /> Speak</span>
+                <span className="text-[8px] shrink-0">•</span>
+                <span className="flex items-center gap-0.5 opacity-30 cursor-not-allowed"><CornerUpLeft className="w-3 h-3" /> Reply</span>
               </span>
             </div>
           )}
