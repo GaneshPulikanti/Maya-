@@ -19,6 +19,12 @@ export const ChatProvider = ({ children }) => {
   // AbortController ref for cancelling active streams
   const abortControllerRef = useRef(null)
 
+  // Race condition refs (sync during render)
+  const activeSessionIdRef = useRef(activeSessionId)
+  activeSessionIdRef.current = activeSessionId
+  const isStreamingRef = useRef(isStreaming)
+  isStreamingRef.current = isStreaming
+
   // Prefetching sessions tracking ref
   const prefetchingRef = useRef(new Set())
   const isInitializingRef = useRef(false)
@@ -154,6 +160,13 @@ export const ChatProvider = ({ children }) => {
     if (!isBackground) setLoadingMessages(true)
     try {
       const response = await api.get(`/api/chat/sessions/${sessionId}/messages`)
+      
+      // Prevent race conditions where old requests resolve after changing sessions
+      if (activeSessionIdRef.current !== sessionId) return
+      
+      // Prevent background polling from overwriting optimistic local messages during streams
+      if (isBackground && isStreamingRef.current) return
+
       const msgs = response.data
 
       // Silently purge orphaned assistant messages — those left behind when only
