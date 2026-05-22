@@ -1,0 +1,282 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Maya Premium Soft Rosy / Wine / Light Theme Variables ──────────────────── */
+/* Primary accent  : Bulgarian Rose   #4C0811                                     */
+/* Secondary accent: Cerise           #9e0232                                     */
+/* Subtitle pink   : Persian Pink     #FC89C3                                     */
+/* Lightest base   : Classic Rose     #FAC6E5                                     */
+/* Background      : Ghost Rose       #FFF5FA                                     */
+/* ────────────────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  body {
+    background-color: #FFF5FA;   /* wine-950 — ultra-soft light rose background */
+    color: #9e0232;              /* butter-100 — vibrant pink primary text */
+    font-family: 'Outfit', 'Inter', sans-serif;
+  }
+
+  /* ── Custom Scrollbar — Light Rose & Cerise ─────────────────────────────── */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #FAC6E5;         /* wine-800 (Classic Rose) */
+    border-radius: 9999px;
+    border: 1px solid #FDE4F2;   /* wine-900 */
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #9e0232;         /* Cerise pink */
+    box-shadow: 0 0 8px rgba(158, 2, 50, 0.25);
+  }
+}
+
+@layer components {
+  /* ── Glassmorphic Card ────────────────────────────────────────────────────── */
+  .glass-card {
+    background: rgba(253, 228, 242, 0.65);       /* wine-900 (soft Classic Rose tint) */
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(158, 2, 50, 0.18);  /* Cerise tint border */
+    box-shadow: 0 8px 32px 0 rgba(158, 2, 50, 0.08); /* soft pink shadow */
+  }
+
+  .glass-card-hover {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .glass-card-hover:hover {
+    background: rgba(250, 198, 229, 0.75);       /* wine-800 */
+    border-color: rgba(158, 2, 50, 0.42);
+    box-shadow: 0 12px 40px 0 rgba(158, 2, 50, 0.08);
+  }
+
+  /* ── Glow utilities ──────────────────────────────────────────────────────── */
+  .glass-glow-rose {
+    box-shadow: 0 0 22px 0 rgba(158, 2, 50, 0.18);
+  }
+
+  .glass-glow-butter {
+    box-shadow: 0 0 20px 0 rgba(158, 2, 50, 0.05);
+  }
+
+  /* ── Input control ───────────────────────────────────────────────────────── */
+  .rose-input {
+    background: rgba(253, 228, 242, 0.7);        /* wine-900 */
+    border: 1px solid rgba(158, 2, 50, 0.28);
+    color: #9e0232;                           /* butter-100 (vibrant pink text) */
+    transition: all 0.2s ease-in-out;
+  }
+
+  .rose-input:focus {
+    outline: none;
+    border-color: #9e0232;                    /* Cerise focus border */
+    box-shadow: 0 0 12px 0 rgba(158, 2, 50, 0.15);
+    background: rgba(250, 198, 229, 0.85);      /* wine-800 */
+  }
+
+  /* Hide scrollbar for input since it auto-resizes */
+  .rose-input::-webkit-scrollbar,
+  textarea::-webkit-scrollbar {
+    display: none;
+  }
+  .rose-input, textarea {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+}
+
+/* ── Micro-animations & Keyframes ─────────────────────────────────────────── */
+@keyframes emotional-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.85;
+    box-shadow: 0 0 0 0 rgba(158, 2, 50, 0.25);
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+    box-shadow: 0 0 14px 6px rgba(158, 2, 50, 0.1);
+  }
+}
+
+@keyframes bubble-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dot-bounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-6px);
+  }
+}
+
+/* Utility animations */
+.animate-emotional-pulse {
+  animation: emotional-pulse 3s infinite ease-in-out;
+}
+
+.animate-bubble-entry {
+  animation: bubble-fade-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.typing-dot {
+  animation: dot-bounce 1.4s infinite ease-in-out;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes love-float {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 4px 20px 0 rgba(158, 2, 50, 0.18),
+                0 0 0 1px rgba(158, 2, 50, 0.12);
+  }
+  50% {
+    transform: translateY(-8px) scale(1.06);
+    box-shadow: 0 12px 28px 4px rgba(158, 2, 50, 0.25),
+                0 0 14px 4px rgba(158, 2, 50, 0.04);
+  }
+}
+
+.animate-love-float {
+  animation: love-float 2.2s infinite ease-in-out;
+}
+
+/* ─── Foolproof Theme Overrides (Ensures vibrant pink #9e0232 everywhere) ─── */
+.bg-rose-500,
+.hover\:bg-rose-500:hover,
+.bg-rose-600,
+.hover\:bg-rose-600:hover {
+  background-color: #9e0232 !important;
+}
+
+.text-rose-500,
+.text-rose-600,
+.text-rose-400,
+.text-rose-300,
+.text-butter-50,
+.text-butter-100,
+.text-butter-200,
+.text-butter-300,
+.text-butter-400,
+.hover\:text-rose-500:hover,
+.hover\:text-rose-600:hover {
+  color: #9e0232 !important;
+}
+
+.border-rose-500,
+.border-rose-600,
+.border-rose-500\/10,
+.border-rose-500\/20,
+.border-rose-500\/30,
+.border-rose-500\/40,
+.border-rose-600\/10,
+.border-rose-600\/15 {
+  border-color: rgba(158, 2, 50, 0.2) !important;
+}
+
+.bg-rose-500\/5 {
+  background-color: rgba(158, 2, 50, 0.05) !important;
+}
+
+.bg-rose-500\/10 {
+  background-color: rgba(158, 2, 50, 0.1) !important;
+}
+
+.bg-rose-500\/20 {
+  background-color: rgba(158, 2, 50, 0.2) !important;
+}
+
+.bg-rose-500\/40 {
+  background-color: rgba(158, 2, 50, 0.4) !important;
+}
+
+.bg-rose-950\/40 {
+  background-color: rgba(158, 2, 50, 0.4) !important;
+}
+
+.shadow-rose-500\/15 {
+  box-shadow: 0 4px 6px -1px rgba(158, 2, 50, 0.15), 0 2px 4px -2px rgba(158, 2, 50, 0.15) !important;
+}
+
+.shadow-rose-500\/5 {
+  box-shadow: 0 4px 6px -1px rgba(158, 2, 50, 0.05), 0 2px 4px -2px rgba(158, 2, 50, 0.05) !important;
+}
+
+/* ─── Premium Vocal Voice Keyframe Equalizer Animations ─── */
+@keyframes vocal-wave-1 {
+  0%, 100% { height: 6px; }
+  50% { height: 16px; }
+}
+@keyframes vocal-wave-2 {
+  0%, 100% { height: 10px; }
+  50% { height: 28px; }
+}
+@keyframes vocal-wave-3 {
+  0%, 100% { height: 4px; }
+  50% { height: 22px; }
+}
+@keyframes vocal-wave-large-1 {
+  0%, 100% { height: 16px; }
+  50% { height: 48px; }
+}
+@keyframes vocal-wave-large-2 {
+  0%, 100% { height: 24px; }
+  50% { height: 60px; }
+}
+@keyframes vocal-wave-large-3 {
+  0%, 100% { height: 12px; }
+  50% { height: 52px; }
+}
+
+.animate-vocal-1 {
+  animation: vocal-wave-1 0.7s ease-in-out infinite;
+}
+.animate-vocal-2 {
+  animation: vocal-wave-2 0.7s ease-in-out infinite 0.15s;
+}
+.animate-vocal-3 {
+  animation: vocal-wave-3 0.7s ease-in-out infinite 0.3s;
+}
+.animate-vocal-4 {
+  animation: vocal-wave-1 0.7s ease-in-out infinite 0.45s;
+}
+
+.animate-vocal-large-1 {
+  animation: vocal-wave-large-1 0.6s ease-in-out infinite;
+}
+.animate-vocal-large-2 {
+  animation: vocal-wave-large-2 0.6s ease-in-out infinite 0.15s;
+}
+.animate-vocal-large-3 {
+  animation: vocal-wave-large-3 0.6s ease-in-out infinite 0.3s;
+}
+.animate-vocal-large-4 {
+  animation: vocal-wave-large-2 0.6s ease-in-out infinite 0.45s;
+}
+.animate-vocal-large-5 {
+  animation: vocal-wave-large-1 0.6s ease-in-out infinite 0.6s;
+}
+
