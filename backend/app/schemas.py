@@ -80,6 +80,7 @@ class ChatMessageCreate(BaseModel):
     Schema for sending a new message to a session.
     """
     content: str = Field(..., min_length=1, description="Message content cannot be empty.")
+    is_voice: bool = False
 
 class ChatMessageResponse(BaseModel):
     """

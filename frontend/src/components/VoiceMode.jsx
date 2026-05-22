@@ -293,7 +293,7 @@ export default function VoiceMode({ isOpen, onClose }) {
       prevStreamingRef.current = false
       waitingRef.current = true
 
-      sendMessage(spoken)
+      sendMessage(spoken, true)
       // Phase stays 'processing' — the isStreaming useEffect will move to 'speaking'
     } catch (err) {
       console.error('STT error:', err)

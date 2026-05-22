@@ -402,7 +402,7 @@ export const ChatProvider = ({ children }) => {
   }
 
   // Custom fetch-based SSE real-time token stream reader
-  const sendMessage = async (content) => {
+  const sendMessage = async (content, isVoice = false) => {
     if (!activeSessionId || !content.trim() || isStreaming) return
 
     const userMessage = {
@@ -431,7 +431,7 @@ export const ChatProvider = ({ children }) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ content: content.trim() }),
+        body: JSON.stringify({ content: content.trim(), is_voice: isVoice }),
         signal: abortController.signal
       })
 

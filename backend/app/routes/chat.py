@@ -645,6 +645,10 @@ async def send_message_stream(
         targeted_file_content=targeted_file_content
     )
     
+    if getattr(payload, "is_voice", False):
+        system_prompt += "\n\nCRITICAL INSTRUCTION: The user is speaking to you using Voice Mode. You MUST reply strictly in 1 or 2 short, conversational sentences. Keep it extremely brief and natural for spoken dialogue. DO NOT use markdown formatting, lists, or long explanations."
+        
+    
     # 7. Asynchronous SSE Generator function
     async def event_generator():
         complete_ai_response = []
@@ -821,6 +825,10 @@ async def send_shared_message_stream(
         mind_space_docs=mind_space_docs,
         targeted_file_content=""
     )
+    
+    if getattr(payload, "is_voice", False):
+        system_prompt += "\n\nCRITICAL INSTRUCTION: The user is speaking to you using Voice Mode. You MUST reply strictly in 1 or 2 short, conversational sentences. Keep it extremely brief and natural for spoken dialogue. DO NOT use markdown formatting, lists, or long explanations."
+        
     
     # 6. Asynchronous SSE Generator function
     async def event_generator():
