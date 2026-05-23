@@ -449,6 +449,26 @@ export const ChatProvider = ({ children }) => {
       let fullAssistantText = ""
       let streamAborted = false
 
+      const tokenQueue = []
+      let isReadingFinished = false
+
+      // Artificial typewriter effect loop
+      const renderPromise = (async () => {
+        while (!isReadingFinished || tokenQueue.length > 0) {
+          if (tokenQueue.length > 0) {
+            const token = tokenQueue.shift()
+            fullAssistantText += token
+            setStreamingMessage(fullAssistantText)
+            
+            // Speed up if the queue gets too large so it doesn't lag too far behind
+            const delay = tokenQueue.length > 20 ? 5 : 20
+            await new Promise(r => setTimeout(r, delay))
+          } else {
+            await new Promise(r => setTimeout(r, 10))
+          }
+        }
+      })()
+
       try {
         while (true) {
           const { value, done } = await reader.read()
@@ -471,8 +491,7 @@ export const ChatProvider = ({ children }) => {
               try {
                 const parsed = JSON.parse(dataStr)
                 if (parsed.token) {
-                  fullAssistantText += parsed.token
-                  setStreamingMessage(fullAssistantText)
+                  tokenQueue.push(parsed.token)
                 }
               } catch (e) {
                 console.warn("Could not parse SSE token payload:", cleanedLine, e)
@@ -489,6 +508,8 @@ export const ChatProvider = ({ children }) => {
           throw readErr
         }
       } finally {
+        isReadingFinished = true
+        await renderPromise // Wait for the typewriter animation to finish before proceeding
         abortControllerRef.current = null
       }
 
@@ -675,6 +696,26 @@ export const ChatProvider = ({ children }) => {
       let fullAssistantText = ""
       let streamAborted = false
 
+      const tokenQueue = []
+      let isReadingFinished = false
+
+      // Artificial typewriter effect loop
+      const renderPromise = (async () => {
+        while (!isReadingFinished || tokenQueue.length > 0) {
+          if (tokenQueue.length > 0) {
+            const token = tokenQueue.shift()
+            fullAssistantText += token
+            setStreamingMessage(fullAssistantText)
+            
+            // Speed up if the queue gets too large so it doesn't lag too far behind
+            const delay = tokenQueue.length > 20 ? 5 : 20
+            await new Promise(r => setTimeout(r, delay))
+          } else {
+            await new Promise(r => setTimeout(r, 10))
+          }
+        }
+      })()
+
       try {
         while (true) {
           const { value, done } = await reader.read()
@@ -693,8 +734,7 @@ export const ChatProvider = ({ children }) => {
               try {
                 const parsed = JSON.parse(dataStr)
                 if (parsed.token) {
-                  fullAssistantText += parsed.token
-                  setStreamingMessage(fullAssistantText)
+                  tokenQueue.push(parsed.token)
                 }
               } catch (e) {
                 console.warn("Could not parse SSE token:", cleanedLine, e)
@@ -709,6 +749,8 @@ export const ChatProvider = ({ children }) => {
           throw readErr
         }
       } finally {
+        isReadingFinished = true
+        await renderPromise // Wait for the typewriter animation to finish before proceeding
         abortControllerRef.current = null
       }
 

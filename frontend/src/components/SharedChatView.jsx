@@ -235,8 +235,29 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       let partialChunk = ""
       let fullAssistantText = ""
 
-      while (true) {
-        const { value, done } = await reader.read()
+      const tokenQueue = []
+      let isReadingFinished = false
+
+      // Artificial typewriter effect loop
+      const renderPromise = (async () => {
+        while (!isReadingFinished || tokenQueue.length > 0) {
+          if (tokenQueue.length > 0) {
+            const token = tokenQueue.shift()
+            fullAssistantText += token
+            setStreamingMessage(fullAssistantText)
+            
+            // Speed up if the queue gets too large so it doesn't lag too far behind
+            const delay = tokenQueue.length > 20 ? 5 : 20
+            await new Promise(r => setTimeout(r, delay))
+          } else {
+            await new Promise(r => setTimeout(r, 10))
+          }
+        }
+      })()
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read()
         if (done) break
 
         const chunk = decoder.decode(value, { stream: true })
@@ -252,14 +273,17 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             try {
               const parsed = JSON.parse(dataStr)
               if (parsed.token) {
-                fullAssistantText += parsed.token
-                setStreamingMessage(fullAssistantText)
+                tokenQueue.push(parsed.token)
               }
             } catch (e) {
               console.warn("Could not parse token in stream:", e)
             }
           }
         }
+      }
+      } finally {
+        isReadingFinished = true
+        await renderPromise
       }
 
       // Fetch immediately to sync DB state
