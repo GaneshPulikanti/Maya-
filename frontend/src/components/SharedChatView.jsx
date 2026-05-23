@@ -98,7 +98,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     if (!sessionId) return
 
     const fetchHistory = () => {
-      api.get(`/api/chat/shared/${sessionId}`)
+      api.get(`/api/chat/shared/${sessionId}?t=${Date.now()}`)
         .then(response => {
           setSession(prev => {
             if (!prev) return response.data;
@@ -219,7 +219,8 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
         cleanContent = imgPrefix + filePrefix + replyPrefix + nameMatch[2]
       }
 
-      const isMe = (displayName === guestName || (user?.email && (
+      const localGuestName = localStorage.getItem('maya_guest_name');
+      const isMe = ((localGuestName && displayName === localGuestName) || (user?.email && (
         displayName.toLowerCase() === user.email.toLowerCase() ||
         displayName.toLowerCase() === user.email.split('@')[0].toLowerCase()
       )))

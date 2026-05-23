@@ -111,17 +111,9 @@ const AppContent = () => {
   }
 
   if (isSharedPath) {
-    // If not logged in, immediately return the SharedChatView
     if (!user) {
-      return (
-        <SharedChatView 
-          sessionId={pathParts[2]} 
-          onBackToApp={() => {
-            window.history.pushState({}, '', '/')
-            window.location.reload()
-          }} 
-        />
-      )
+      sessionStorage.setItem('join_shared_session_id', pathParts[2])
+      return <Auth />
     }
   }
 

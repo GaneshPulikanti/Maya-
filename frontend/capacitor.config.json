@@ -1,0 +1,9 @@
+{
+  "appId": "org.maya.companion",
+  "appName": "Maya",
+  "webDir": "dist",
+  "server": {
+    "url": "https://maya-companian.vercel.app",
+    "cleartext": true
+  }
+}

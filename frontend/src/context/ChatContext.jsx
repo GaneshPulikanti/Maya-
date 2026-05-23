@@ -159,7 +159,7 @@ export const ChatProvider = ({ children }) => {
     if (!token || !sessionId || sessionId === 'new') return
     if (!isBackground) setLoadingMessages(true)
     try {
-      const response = await api.get(`/api/chat/sessions/${sessionId}/messages`)
+      const response = await api.get(`/api/chat/sessions/${sessionId}/messages?t=${Date.now()}`)
       
       // Prevent race conditions where old requests resolve after changing sessions
       if (activeSessionIdRef.current !== sessionId) return
@@ -300,7 +300,7 @@ export const ChatProvider = ({ children }) => {
         if (!sessionsMessages[session.id] && !prefetchingRef.current.has(session.id)) {
           prefetchingRef.current.add(session.id)
           try {
-            const response = await api.get(`/api/chat/sessions/${session.id}/messages`)
+            const response = await api.get(`/api/chat/sessions/${session.id}/messages?t=${Date.now()}`)
             setSessionsMessages(prev => ({ ...prev, [session.id]: response.data }))
           } catch (error) {
             console.error(`Failed to preload messages for session ${session.id}:`, error)
