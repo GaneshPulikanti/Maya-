@@ -143,6 +143,11 @@ export default function VoiceMode({ isOpen, onClose }) {
   const timerRef          = useRef(null)
   const speakCancelRef    = useRef(null)
   const abortRecRef       = useRef(false) // Track intentional aborts
+  const isOpenRef         = useRef(isOpen)
+
+  useEffect(() => {
+    isOpenRef.current = isOpen
+  }, [isOpen])
 
   // Keep phaseRef in sync (sync update, not async like useEffect)
   const setPhaseSync = (p) => { phaseRef.current = p; setPhase(p) }
@@ -285,6 +290,12 @@ export default function VoiceMode({ isOpen, onClose }) {
       const res = await api.post('/api/voice/transcribe', fd, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
+      
+      // If user closed the modal or intentionally aborted, don't send!
+      if (!isOpenRef.current || abortRecRef.current) {
+        return
+      }
+
       const spoken = res.data?.text?.trim()
       if (!spoken || spoken.length < 2) {
         setError("Didn't catch that. Speak clearly and try again.")
@@ -301,6 +312,7 @@ export default function VoiceMode({ isOpen, onClose }) {
       sendMessage(spoken, true)
       // Phase stays 'processing' — the isStreaming useEffect will move to 'speaking'
     } catch (err) {
+      if (!isOpenRef.current || abortRecRef.current) return;
       console.error('STT error:', err)
       setError(err?.response?.data?.detail || 'Transcription failed. Try again.')
       setPhaseSync(PHASE.IDLE)
