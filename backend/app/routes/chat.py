@@ -478,7 +478,8 @@ async def send_message_stream(
             session.title = await llm_service.generate_conversation_title(clean_content)
     
     # 4. Update session updated_at timestamp
-    session.title = session.title  # Touch session to trigger update
+    from datetime import datetime, timezone
+    session.updated_at = datetime.now(timezone.utc)
     await db.commit()
     
     # 4. Fetch last 10 messages for conversational context (reduced from 20 to safeguard rate limits)
@@ -759,7 +760,8 @@ async def send_shared_message_stream(
     db.add(user_msg)
     
     # Touch session to trigger update
-    session.title = session.title
+    from datetime import datetime, timezone
+    session.updated_at = datetime.now(timezone.utc)
     await db.commit()
     
     # 3. Fetch last 10 messages for conversational context
