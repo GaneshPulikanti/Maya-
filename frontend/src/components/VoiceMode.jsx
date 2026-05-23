@@ -39,7 +39,7 @@ function toSpeechText(text) {
 // ─── TTS: Web Speech API fires immediately, Groq Orpheus upgrades if faster ──
 function speakText(rawText, onDone) {
   const text = toSpeechText(rawText)
-  if (!text) { onDone?.(); return () => {} }
+  if (!text) { onDone?.(); return () => { } }
 
   let finished = false
   let activeAudio = null
@@ -55,17 +55,17 @@ function speakText(rawText, onDone) {
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel()
     const utter = new SpeechSynthesisUtterance(text)
-    utter.rate   = 1.05
-    utter.pitch  = 1.05
+    utter.rate = 1.05
+    utter.pitch = 1.05
     utter.volume = 1.0
-    utter.onend  = done
+    utter.onend = done
     utter.onerror = done
 
     const go = () => {
       if (!finished) {
         const voices = window.speechSynthesis.getVoices()
-        const femaleVoice = voices.find(v => 
-          ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
+        const femaleVoice = voices.find(v =>
+          ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name =>
             v.name.includes(name)
           )
         ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
@@ -93,10 +93,32 @@ function speakText(rawText, onDone) {
       finished = false // reset finished flag to allow Orpheus end handler to trigger done()
       const url = URL.createObjectURL(res.data)
       const audio = new Audio(url)
+      audio.setAttribute("playsinline", "true")
+      audio.volume = 1.0
       activeAudio = audio
-      audio.onended = () => { URL.revokeObjectURL(url); activeAudio = null; done() }
-      audio.onerror = () => { URL.revokeObjectURL(url); activeAudio = null; done() }
-      audio.play().catch(done)
+      audio.onended = () => {
+        console.log("Audio ended")
+        URL.revokeObjectURL(url)
+        activeAudio = null
+        done()
+      }
+      audio.onerror = (e) => {
+        console.log("Audio playback error", e)
+        URL.revokeObjectURL(url)
+        activeAudio = null
+        done()
+      }
+
+      audio.oncanplaythrough = async () => {
+        try {
+          console.log("Trying audio playback")
+          await audio.play()
+          console.log("Audio playback started")
+        } catch (err) {
+          console.log("Audio play failed", err)
+          done()
+        }
+      }
     })
     .catch(() => { /* Web Speech is already the fallback */ })
 
@@ -105,7 +127,7 @@ function speakText(rawText, onDone) {
     finished = true
     window.speechSynthesis?.cancel()
     if (activeAudio) {
-      try { activeAudio.pause() } catch {}
+      try { activeAudio.pause() } catch { }
       activeAudio = null
     }
   }
@@ -113,17 +135,17 @@ function speakText(rawText, onDone) {
 
 // ─── Phase constants ─────────────────────────────────────────────────────────
 const PHASE = {
-  IDLE:       'idle',
-  LISTENING:  'listening',
+  IDLE: 'idle',
+  LISTENING: 'listening',
   PROCESSING: 'processing',
-  SPEAKING:   'speaking',
+  SPEAKING: 'speaking',
 }
 
 const COLORS = {
-  [PHASE.IDLE]:       '#9e0232', // Cerise - Primary Accent
-  [PHASE.LISTENING]:  '#FC89C3', // Persian Pink - Soft Pink Accent
+  [PHASE.IDLE]: '#9e0232', // Cerise - Primary Accent
+  [PHASE.LISTENING]: '#FC89C3', // Persian Pink - Soft Pink Accent
   [PHASE.PROCESSING]: '#FAC6E5', // Classic Rose - Cream Pink Accent
-  [PHASE.SPEAKING]:   '#9e0232', // Pink Raspberry replacement (vibrant pink)
+  [PHASE.SPEAKING]: '#9e0232', // Pink Raspberry replacement (vibrant pink)
 }
 
 const VocalIconLarge = ({ isMoving = false, color = "#9e0232" }) => {
@@ -142,25 +164,25 @@ const VocalIconLarge = ({ isMoving = false, color = "#9e0232" }) => {
 export default function VoiceMode({ isOpen, onClose }) {
   const { sendMessage, messages, isStreaming } = useChat()
 
-  const [phase, setPhase]       = useState(PHASE.IDLE)
-  const [transcript, setTrans]  = useState('')
-  const [mayaReply, setReply]   = useState('')
-  const [recSecs, setRecSecs]   = useState(0)
-  const [error, setError]       = useState('')
+  const [phase, setPhase] = useState(PHASE.IDLE)
+  const [transcript, setTrans] = useState('')
+  const [mayaReply, setReply] = useState('')
+  const [recSecs, setRecSecs] = useState(0)
+  const [error, setError] = useState('')
 
   // Internal refs — never stale in async callbacks
-  const phaseRef          = useRef(PHASE.IDLE)
-  const waitingRef        = useRef(false)       // true after sendMessage is called
-  const prevStreamingRef  = useRef(false)       // track isStreaming transitions
-  const mountedRef        = useRef(true)
-  const mediaRecRef       = useRef(null)
-  const chunksRef         = useRef([])
-  const streamRef         = useRef(null)
-  const timerRef          = useRef(null)
-  const speakCancelRef    = useRef(null)
-  const abortRecRef       = useRef(false) // Track intentional aborts
-  const isOpenRef         = useRef(isOpen)
-  const isAndroidRef      = useRef(typeof window !== 'undefined' && /android/i.test(navigator.userAgent))
+  const phaseRef = useRef(PHASE.IDLE)
+  const waitingRef = useRef(false)       // true after sendMessage is called
+  const prevStreamingRef = useRef(false)       // track isStreaming transitions
+  const mountedRef = useRef(true)
+  const mediaRecRef = useRef(null)
+  const chunksRef = useRef([])
+  const streamRef = useRef(null)
+  const timerRef = useRef(null)
+  const speakCancelRef = useRef(null)
+  const abortRecRef = useRef(false) // Track intentional aborts
+  const isOpenRef = useRef(isOpen)
+  const isAndroidRef = useRef(typeof window !== 'undefined' && /android/i.test(navigator.userAgent))
   const recordingMethodRef = useRef('mediarecorder')
 
   useEffect(() => {
@@ -228,11 +250,11 @@ export default function VoiceMode({ isOpen, onClose }) {
   const stopEverything = () => {
     abortRecRef.current = true // Mark as intentional abort
     if (speakCancelRef.current) {
-      try { speakCancelRef.current() } catch {}
+      try { speakCancelRef.current() } catch { }
       speakCancelRef.current = null
     }
     if (mediaRecRef.current?.state === 'recording') {
-      try { mediaRecRef.current.stop() } catch {}
+      try { mediaRecRef.current.stop() } catch { }
     }
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
@@ -245,7 +267,7 @@ export default function VoiceMode({ isOpen, onClose }) {
   const startRec = async () => {
     setError('')
     chunksRef.current = []
-    
+
     // Try Capacitor plugin first on Android devices
     if (isAndroidRef.current && AudioRecorder && isCapacitorAvailable) {
       try {
@@ -267,13 +289,13 @@ export default function VoiceMode({ isOpen, onClose }) {
       streamRef.current = stream
 
       let opts = {}
-      if      (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) opts = { mimeType: 'audio/webm;codecs=opus' }
-      else if (MediaRecorder.isTypeSupported('audio/webm'))             opts = { mimeType: 'audio/webm' }
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) opts = { mimeType: 'audio/webm;codecs=opus' }
+      else if (MediaRecorder.isTypeSupported('audio/webm')) opts = { mimeType: 'audio/webm' }
 
       const rec = new MediaRecorder(stream, opts)
       mediaRecRef.current = rec
       recordingMethodRef.current = 'mediarecorder'
-      
+
       rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
       rec.onstop = async () => {
         streamRef.current?.getTracks().forEach(t => t.stop())
@@ -302,12 +324,12 @@ export default function VoiceMode({ isOpen, onClose }) {
   // ── Stop recording ─────────────────────────────────────────────────────────
   const stopRec = async () => {
     abortRecRef.current = false // Intentional user finish (not aborting)
-    
+
     if (recordingMethodRef.current === 'capacitor' && AudioRecorder) {
       try {
         const result = await AudioRecorder.stopRecording()
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-        
+
         // Capacitor returns base64 audio data
         if (result && result.value) {
           const binaryString = atob(result.value)
@@ -348,7 +370,7 @@ export default function VoiceMode({ isOpen, onClose }) {
       const res = await api.post('/api/voice/transcribe', fd, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
-      
+
       // If user closed the modal or intentionally aborted, don't send!
       if (!isOpenRef.current || abortRecRef.current) {
         return
@@ -393,7 +415,7 @@ export default function VoiceMode({ isOpen, onClose }) {
     } else if (phaseRef.current === PHASE.SPEAKING) {
       // CHATGPT INTERRUPT MODE: If clicked while speaking, immediately stop speaking and start listening to user's new turn!
       if (speakCancelRef.current) {
-        try { speakCancelRef.current() } catch {}
+        try { speakCancelRef.current() } catch { }
         speakCancelRef.current = null
       }
       setTrans('')
@@ -495,8 +517,8 @@ export default function VoiceMode({ isOpen, onClose }) {
                 background: phase === PHASE.LISTENING
                   ? `radial-gradient(circle,${color}48,${color}18)`
                   : phase === PHASE.SPEAKING
-                  ? `radial-gradient(circle,rgba(158,2,50,.22),rgba(158,2,50,.06))`
-                  : `radial-gradient(circle,rgba(158,2,50,.2),rgba(158,2,50,.06))`,
+                    ? `radial-gradient(circle,rgba(158,2,50,.22),rgba(158,2,50,.06))`
+                    : `radial-gradient(circle,rgba(158,2,50,.2),rgba(158,2,50,.06))`,
                 cursor: (phase !== PHASE.PROCESSING) ? 'pointer' : 'default',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 transition: 'all .28s',
@@ -513,13 +535,13 @@ export default function VoiceMode({ isOpen, onClose }) {
           {/* Sound wave bars */}
           {isPulsing && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 28 }}>
-              {[.28,.6,.98,.68,.38,.82,.5,.88,.32,.65,.48,.36].map((h, i) => (
+              {[.28, .6, .98, .68, .38, .82, .5, .88, .32, .65, .48, .36].map((h, i) => (
                 <div key={i} style={{
-                   width: 3, borderRadius: 3,
-                   background: phase === PHASE.LISTENING ? '#FC89C3' : '#9e0232',
-                   height: `${h * 28}px`,
-                   animation: `vmBar ${.52 + i * .08}s ease-in-out ${i * .06}s infinite alternate`,
-                   opacity: .85,
+                  width: 3, borderRadius: 3,
+                  background: phase === PHASE.LISTENING ? '#FC89C3' : '#9e0232',
+                  height: `${h * 28}px`,
+                  animation: `vmBar ${.52 + i * .08}s ease-in-out ${i * .06}s infinite alternate`,
+                  opacity: .85,
                 }} />
               ))}
             </div>
@@ -531,10 +553,10 @@ export default function VoiceMode({ isOpen, onClose }) {
             margin: 0, textAlign: 'center', minHeight: 20, transition: 'color .3s',
             textShadow: '0 1px 6px #fff8, 0 0px 1px #fff8',
           }}>
-            {phase === PHASE.IDLE       && 'Tap the mic to start conversation'}
-            {phase === PHASE.LISTENING  && `Listening...  ${recSecs > 0 ? fmt(recSecs) : ''}`}
+            {phase === PHASE.IDLE && 'Tap the mic to start conversation'}
+            {phase === PHASE.LISTENING && `Listening...  ${recSecs > 0 ? fmt(recSecs) : ''}`}
             {phase === PHASE.PROCESSING && 'Maya is thinking...'}
-            {phase === PHASE.SPEAKING   && 'Maya is speaking (tap to interrupt)'}
+            {phase === PHASE.SPEAKING && 'Maya is speaking (tap to interrupt)'}
           </p>
 
           {/* You said bubble */}
@@ -589,10 +611,10 @@ export default function VoiceMode({ isOpen, onClose }) {
 
           {/* Instruction hint */}
           <p style={{ fontSize: 11, color: 'rgba(250,198,229,.28)', fontFamily: 'sans-serif', margin: 0, textAlign: 'center' }}>
-            {phase === PHASE.IDLE       && 'Tap mic → speak → tap again when done'}
-            {phase === PHASE.LISTENING  && 'Speak, then tap the mic button to get the answer'}
+            {phase === PHASE.IDLE && 'Tap mic → speak → tap again when done'}
+            {phase === PHASE.LISTENING && 'Speak, then tap the mic button to get the answer'}
             {phase === PHASE.PROCESSING && 'Processing your voice response...'}
-            {phase === PHASE.SPEAKING   && 'Listening will start automatically when she finished speaking'}
+            {phase === PHASE.SPEAKING && 'Listening will start automatically when she finished speaking'}
           </p>
         </div>
       </div>

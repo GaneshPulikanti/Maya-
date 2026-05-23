@@ -1,6 +1,5 @@
 package org.maya.companion;
 
-import com.canopylabs.maya.plugins.AudioRecorderPlugin;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -15,7 +14,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
 
-        registerPlugin(AudioRecorderPlugin.class);
 
         super.onCreate(savedInstanceState);
 

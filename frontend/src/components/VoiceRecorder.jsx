@@ -25,7 +25,7 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
   const [transcribing, setTranscribing] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
   const [recordingMethod, setRecordingMethod] = useState('mediarecorder') // 'mediarecorder' or 'capacitor'
-  
+
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
   const timerRef = useRef(null)
@@ -53,7 +53,7 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
         recordingMethodRef.current = 'capacitor'
         setRecordingMethod('capacitor')
         setIsRecording(true)
-        
+
         // Start recording timer
         timerRef.current = setInterval(() => {
           setRecordingTime((prev) => prev + 1)
@@ -68,7 +68,7 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
     // Fallback to MediaRecorder API (works on web and some Android WebViews)
     try {
       //const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      
+
       // Determine supported mime type
       let options = {}
       if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
@@ -92,7 +92,7 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' })
-        
+
         // Stop all audio tracks to release microphone
         stream.getTracks().forEach((track) => track.stop())
 
@@ -102,7 +102,7 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
       mediaRecorder.start()
       setRecordingMethod('mediarecorder')
       setIsRecording(true)
-      
+
       // Start recording timer
       timerRef.current = setInterval(() => {
         setRecordingTime((prev) => prev + 1)
@@ -123,12 +123,12 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
       clearInterval(timerRef.current)
       timerRef.current = null
     }
-    
+
     if (recordingMethod === 'capacitor' && AudioRecorder) {
       try {
         const result = await AudioRecorder.stopRecording()
         setIsRecording(false)
-        
+
         // Capacitor returns base64 audio data
         if (result && result.value) {
           const binaryString = atob(result.value)
@@ -199,16 +199,15 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
           <span>Recording: {formatTime(recordingTime)}</span>
         </span>
       )}
-      
+
       <button
         type="button"
         onClick={isRecording ? stopRecording : startRecording}
         disabled={disabled || transcribing}
-        className={`p-2 sm:p-3 rounded-xl border transition-all duration-300 disabled:opacity-40 disabled:pointer-events-none hover:shadow-lg flex items-center justify-center relative ${
-          isRecording
-            ? 'border-rose-500 bg-rose-500/20 text-rose-200 animate-pulse'
-            : 'border-rose-500/20 hover:border-rose-500/40 bg-rose-500/5 hover:bg-rose-500/10 text-rose-300 hover:text-rose-200'
-        }`}
+        className={`p-2 sm:p-3 rounded-xl border transition-all duration-300 disabled:opacity-40 disabled:pointer-events-none hover:shadow-lg flex items-center justify-center relative ${isRecording
+          ? 'border-rose-500 bg-rose-500/20 text-rose-200 animate-pulse'
+          : 'border-rose-500/20 hover:border-rose-500/40 bg-rose-500/5 hover:bg-rose-500/10 text-rose-300 hover:text-rose-200'
+          }`}
         title={isRecording ? "Stop recording and send" : "Record voice input"}
       >
         {transcribing ? (
