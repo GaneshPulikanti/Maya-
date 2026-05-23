@@ -3,6 +3,20 @@ import { X, Loader2, Heart, AlertCircle } from 'lucide-react'
 import { api } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 
+// ─── Capacitor Audio Plugin (Android native recording fallback) ──────────────
+let AudioRecorder = null
+let isCapacitorAvailable = false
+
+if (typeof window !== 'undefined' && window.Capacitor) {
+  try {
+    isCapacitorAvailable = true
+    const { registerPlugin } = window.Capacitor
+    AudioRecorder = registerPlugin('AudioRecorder')
+  } catch (err) {
+    console.warn('Capacitor audio plugin not available')
+  }
+}
+
 // ─── Clean markdown/code out of text before speaking ────────────────────────
 function toSpeechText(text) {
   return (text || '')
@@ -144,6 +158,8 @@ export default function VoiceMode({ isOpen, onClose }) {
   const speakCancelRef    = useRef(null)
   const abortRecRef       = useRef(false) // Track intentional aborts
   const isOpenRef         = useRef(isOpen)
+  const isAndroidRef      = useRef(typeof window !== 'undefined' && /android/i.test(navigator.userAgent))
+  const recordingMethodRef = useRef('mediarecorder')
 
   useEffect(() => {
     isOpenRef.current = isOpen
@@ -227,6 +243,23 @@ export default function VoiceMode({ isOpen, onClose }) {
   const startRec = async () => {
     setError('')
     chunksRef.current = []
+    
+    // Try Capacitor plugin first on Android devices
+    if (isAndroidRef.current && AudioRecorder && isCapacitorAvailable) {
+      try {
+        await AudioRecorder.startRecording()
+        recordingMethodRef.current = 'capacitor'
+        setPhaseSync(PHASE.LISTENING)
+        setRecSecs(0)
+        timerRef.current = setInterval(() => setRecSecs(s => s + 1), 1000)
+        return
+      } catch (err) {
+        console.warn('Capacitor recording failed, falling back to MediaRecorder:', err)
+        // Continue to MediaRecorder fallback
+      }
+    }
+
+    // Fallback to MediaRecorder API (web and some Android WebViews)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
@@ -237,6 +270,8 @@ export default function VoiceMode({ isOpen, onClose }) {
 
       const rec = new MediaRecorder(stream, opts)
       mediaRecRef.current = rec
+      recordingMethodRef.current = 'mediarecorder'
+      
       rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
       rec.onstop = async () => {
         streamRef.current?.getTracks().forEach(t => t.stop())
@@ -263,18 +298,40 @@ export default function VoiceMode({ isOpen, onClose }) {
   }
 
   // ── Stop recording ─────────────────────────────────────────────────────────
-  const stopRec = () => {
+  const stopRec = async () => {
     abortRecRef.current = false // Intentional user finish (not aborting)
-    if (mediaRecRef.current?.state === 'recording') mediaRecRef.current.stop()
+    
+    if (recordingMethodRef.current === 'capacitor' && AudioRecorder) {
+      try {
+        const result = await AudioRecorder.stopRecording()
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+        
+        // Capacitor returns base64 audio data
+        if (result && result.value) {
+          const binaryString = atob(result.value)
+          const bytes = new Uint8Array(binaryString.length)
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i)
+          }
+          const blob = new Blob([bytes], { type: 'audio/wav' })
+          if (mountedRef.current && !abortRecRef.current) {
+            await uploadAndTranscribe(blob)
+          }
+        }
+      } catch (err) {
+        console.error('Capacitor stop error:', err)
+        setPhaseSync(PHASE.IDLE)
+        setError('Failed to stop recording')
+      }
+    } else if (mediaRecRef.current?.state === 'recording') {
+      mediaRecRef.current.stop()
+    }
   }
 
   // ── Transcribe blob → send to Maya ─────────────────────────────────────────
-  const transcribeAndSend = async () => {
+  const uploadAndTranscribe = async (blob) => {
     if (!mountedRef.current) return
     setPhaseSync(PHASE.PROCESSING)
-
-    const mimeType = mediaRecRef.current?.mimeType || 'audio/webm'
-    const blob = new Blob(chunksRef.current, { type: mimeType })
 
     if (blob.size < 600) {
       setError("Didn't hear anything — try speaking a little longer.")
@@ -282,9 +339,8 @@ export default function VoiceMode({ isOpen, onClose }) {
       return
     }
 
-    const ext = mimeType.includes('mp4') ? 'm4a' : 'webm'
     const fd = new FormData()
-    fd.append('file', blob, `voice.${ext}`)
+    fd.append('file', blob, `voice.wav`)
 
     try {
       const res = await api.post('/api/voice/transcribe', fd, {
@@ -317,6 +373,13 @@ export default function VoiceMode({ isOpen, onClose }) {
       setError(err?.response?.data?.detail || 'Transcription failed. Try again.')
       setPhaseSync(PHASE.IDLE)
     }
+  }
+
+  // ── Transcribe blob → send to Maya (legacy name, wraps uploadAndTranscribe) ─
+  const transcribeAndSend = async () => {
+    const mimeType = mediaRecRef.current?.mimeType || 'audio/webm'
+    const blob = new Blob(chunksRef.current, { type: mimeType })
+    await uploadAndTranscribe(blob)
   }
 
   // ── Mic button click ───────────────────────────────────────────────────────

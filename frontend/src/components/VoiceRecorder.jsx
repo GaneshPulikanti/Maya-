@@ -2,14 +2,31 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Mic, Square, Loader2 } from 'lucide-react'
 import { api } from '../context/AuthContext'
 
+// Capacitor plugin for Android audio recording (only loaded if available)
+let AudioRecorder = null
+let isCapacitorAvailable = false
+
+// Attempt to import Capacitor plugin if in native environment
+if (typeof window !== 'undefined' && window.Capacitor) {
+  try {
+    isCapacitorAvailable = true
+    const { registerPlugin } = window.Capacitor
+    AudioRecorder = registerPlugin('AudioRecorder')
+  } catch (err) {
+    console.warn('Capacitor audio plugin not available, falling back to MediaRecorder API')
+  }
+}
+
 export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
   const [isRecording, setIsRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
+  const [recordingMethod, setRecordingMethod] = useState('mediarecorder') // 'mediarecorder' or 'capacitor'
   
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
   const timerRef = useRef(null)
+  const isAndroidRef = useRef(typeof window !== 'undefined' && /android/i.test(navigator.userAgent))
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -20,6 +37,27 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
 
   const startRecording = async () => {
     audioChunksRef.current = []
+    setRecordingTime(0)
+
+    // Try Capacitor plugin first on Android devices
+    if (isAndroidRef.current && AudioRecorder && isCapacitorAvailable) {
+      try {
+        await AudioRecorder.startRecording()
+        setRecordingMethod('capacitor')
+        setIsRecording(true)
+        
+        // Start recording timer
+        timerRef.current = setInterval(() => {
+          setRecordingTime((prev) => prev + 1)
+        }, 1000)
+        return
+      } catch (err) {
+        console.warn('Capacitor recording failed, falling back to MediaRecorder:', err)
+        // Continue to MediaRecorder fallback
+      }
+    }
+
+    // Fallback to MediaRecorder API (works on web and some Android WebViews)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       
@@ -54,8 +92,8 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
       }
 
       mediaRecorder.start()
+      setRecordingMethod('mediarecorder')
       setIsRecording(true)
-      setRecordingTime(0)
       
       // Start recording timer
       timerRef.current = setInterval(() => {
@@ -72,14 +110,34 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
     }
   }
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+  const stopRecording = async () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    
+    if (recordingMethod === 'capacitor' && AudioRecorder) {
+      try {
+        const result = await AudioRecorder.stopRecording()
+        setIsRecording(false)
+        
+        // Capacitor returns base64 audio data
+        if (result && result.value) {
+          const binaryString = atob(result.value)
+          const bytes = new Uint8Array(binaryString.length)
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i)
+          }
+          const blob = new Blob([bytes], { type: 'audio/wav' })
+          await uploadAudio(blob)
+        }
+      } catch (err) {
+        console.error('Capacitor recording stop error:', err)
+        setIsRecording(false)
+      }
+    } else if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop()
       setIsRecording(false)
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
     }
   }
 

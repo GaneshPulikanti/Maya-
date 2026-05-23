@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# This file contains ASCII diagrams for the Android Voice System
+
+cat << 'EOF'
+
+═══════════════════════════════════════════════════════════════════════════════
+                    MAYA ANDROID VOICE SYSTEM ARCHITECTURE
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         FRONTEND: React + Vite                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │ VoiceMode Component (Main Voice UI)                                   │ │
+│  │                                                                        │ │
+│  │  ┌─ Detects Device ─────────────────────────────────────────────────┐ │ │
+│  │  │ Is Android? navigator.userAgent.match(/android/i)               │ │ │
+│  │  └────────────────────────────────────────────────────────────────┬─┘ │ │
+│  │                                                                    │   │ │
+│  │    YES ──────────────────────┐              NO ────────────────────┐  │ │
+│  │                              │                                     │  │ │
+│  │  ┌──────────────────────────▼──────────────────────────────────┐  │  │ │
+│  │  │ Try Capacitor Plugin (Native Android)                      │  │  │ │
+│  │  │ AudioRecorder.startRecording()                             │  │  │ │
+│  │  │ AudioRecorder.stopRecording()                              │  │  │ │
+│  │  └────────┬─────────────────────────────────────────────────────┘  │  │ │
+│  │           │                                                         │  │ │
+│  │   ┌─ Error? ──┐                                                   │  │ │
+│  │   │           │                                                   │  │ │
+│  │  YES         NO                                                   │  │ │
+│  │   │           │                                                   │  │ │
+│  │   ▼           ▼                                                   │  │ │
+│  │ ┌──────────┐ ┌──────────────────────┐                            │  │ │
+│  │ │ Fallback │ │ Native Android Audio │                            │  │ │
+│  │ │ to Web   │ │ ✓ Recording Active   │                            │  │ │
+│  │ │ API      │ │ ✓ WAV Format         │                            │  │ │
+│  │ │          │ │ ✓ Base64 Return      │                            │  │ │
+│  │ └────┬─────┘ └──────────┬───────────┘                            │  │ │
+│  │      │                  │                                         │  │ │
+│  │      └─────────┬────────┘                                         │  │ │
+│  │                │                                                   │  │ │
+│  │              ┌─▼──────────────────────────────────────────────┐   │  │ │
+│  │              │ Both Methods Use MediaRecorder (Fallback)     │   │  │ │
+│  │              │ navigator.mediaDevices.getUserMedia()        │   │  │ │
+│  │              │ ✓ Works on Web                               │   │  │ │
+│  │              │ ✓ Backup for Android if Capacitor fails      │   │  │ │
+│  │              └─────────┬────────────────────────────────────┘   │  │ │
+│  │                        │                                        ◄──┴──┘ │
+│  │                        │                                         │      │
+│  │                        ▼                                         │      │
+│  │              ┌─────────────────────────────────────┐             │      │
+│  │              │ Audio Recording Complete            │             │      │
+│  │              │ Blob or Base64 Audio Data           │             │      │
+│  │              └─────────┬───────────────────────────┘             │      │
+│  │                        │                                         │      │
+│  │                        ▼                                         │      │
+│  │              ┌─────────────────────────────────────┐             │      │
+│  │              │ Upload to Backend                   │             │      │
+│  │              │ POST /api/voice/transcribe          │             │      │
+│  │              │ Content-Type: multipart/form-data   │             │      │
+│  │              └─────────────────────────────────────┘             │      │
+│  │                                                                   │      │
+│  └───────────────────────────────────────────────────────────────────────┘
+│
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      │ HTTPS POST
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         BACKEND: FastAPI + Groq                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Receive Audio File                                                         │
+│  /api/voice/transcribe                                                      │
+│  ├─ Validate audio format (WAV, MP3, WebM, OGG, MP4)                       │
+│  ├─ Check file size > 600 bytes                                            │
+│  │                                                                          │
+│  └─ Send to Groq Whisper API                                               │
+│     ┌──────────────────────────────────────────────────────────┐           │
+│     │ Model: whisper-large-v3-turbo                            │           │
+│     │ ├─ Ultra-fast transcription                             │           │
+│     │ ├─ Highest accuracy                                     │           │
+│     │ ├─ Multilingual support                                 │           │
+│     │ └─ Enterprise-grade                                     │           │
+│     └──────────────────────┬───────────────────────────────────┘           │
+│                            │                                               │
+│                            ▼                                               │
+│                  Return: { "text": "..." }                                 │
+│                                                                              │
+│  Response back to frontend with transcribed text                           │
+│  ├─ Display text in chat input field                                       │
+│  ├─ Insert into message with send button                                   │
+│  └─ User can edit or send immediately                                      │
+│                                                                              │
+│  Also provide TTS when AI responds                                         │
+│  /api/voice/speak                                                          │
+│  ├─ Receive: { "text": "...", "voice": "diana" }                          │
+│  │                                                                          │
+│  └─ Send to Groq Orpheus Model                                             │
+│     ┌──────────────────────────────────────────────────────────┐           │
+│     │ Model: canopylabs/orpheus-v1-english                     │           │
+│     │ ├─ Female voice "diana" (high quality)                   │           │
+│     │ ├─ Natural speech synthesis                              │           │
+│     │ ├─ Emotional expressiveness                              │           │
+│     │ └─ Low latency (~1-5 sec for typical response)          │           │
+│     └──────────────────┬───────────────────────────────────────┘           │
+│                        │                                                   │
+│                        ▼                                                   │
+│              Return: WAV audio bytes                                       │
+│                                                                              │
+│  Response back to frontend with audio                                      │
+│  └─ Frontend plays audio to user                                           │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      │ Response data
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           FRONTEND: Audio Playback                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Receive TTS Audio from Backend                                             │
+│  ├─ Create Blob from response                                              │
+│  ├─ Generate Object URL                                                    │
+│  └─ Create Audio Element: new Audio(objectURL)                             │
+│                                                                              │
+│  Play Speech to User                                                        │
+│  ├─ audio.play()                                                           │
+│  ├─ Play modal shows "Maya is speaking"                                    │
+│  └─ Show interruption hint                                                 │
+│                                                                              │
+│  Auto-Continue Conversation Loop                                           │
+│  ├─ When audio finishes playing                                            │
+│  ├─ Automatically return to LISTENING phase                                │
+│  └─ Ready for next user voice input                                        │
+│                                                                              │
+│  Or User Can Interrupt (ChatGPT Style)                                     │
+│  ├─ Click microphone while speaking                                        │
+│  ├─ Stop current TTS                                                       │
+│  ├─ Start new recording immediately                                        │
+│  └─ Send new user input                                                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                           DATA FLOW SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+  ┌──────────┐
+  │ Microphone
+  │ Input    │
+  └────┬─────┘
+       │ (Sound waves)
+       ▼
+  ┌──────────────────────────────────────────┐
+  │ Recording Method Selection                │
+  │ ├─ Android + Capacitor? ──► Capacitor   │
+  │ └─ Otherwise ───────────► MediaRecorder │
+  └────────┬─────────────────────────────────┘
+           │ (WAV or WebM audio Blob)
+           ▼
+  ┌──────────────────────────────────────────┐
+  │ Upload to /api/voice/transcribe          │
+  │ POST multipart/form-data                 │
+  └────────┬─────────────────────────────────┘
+           │
+           ▼
+  ┌──────────────────────────────────────────┐
+  │ Groq Whisper API                         │
+  │ whisper-large-v3-turbo                   │
+  │ (Transcription: ~2-3 seconds)            │
+  └────────┬─────────────────────────────────┘
+           │ { "text": "What time is it?" }
+           ▼
+  ┌──────────────────────────────────────────┐
+  │ Insert into Chat Input                   │
+  │ Display for user review/edit             │
+  │ Send Button Ready                        │
+  └────────┬─────────────────────────────────┘
+           │
+           ▼
+  ┌──────────────────────────────────────────┐
+  │ Send Message to AI                       │
+  │ (Chat API processes)                     │
+  │ ├─ Maya receives question                │
+  │ ├─ Generates response                    │
+  │ └─ Returns text                          │
+  └────────┬─────────────────────────────────┘
+           │ "It's 3:45 PM"
+           ▼
+  ┌──────────────────────────────────────────┐
+  │ Send to /api/voice/speak                 │
+  │ { "text": "It's 3:45 PM", "voice": "diana" }
+  └────────┬─────────────────────────────────┘
+           │
+           ▼
+  ┌──────────────────────────────────────────┐
+  │ Groq Orpheus TTS                         │
+  │ (Speech generation: ~1-5 seconds)        │
+  └────────┬─────────────────────────────────┘
+           │ (WAV audio bytes)
+           ▼
+  ┌──────────────────────────────────────────┐
+  │ Play Audio to Speaker                    │
+  │ User hears: "It's 3:45 PM"              │
+  │ Auto-loop back to listening              │
+  └──────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                           ERROR HANDLING FLOW
+═══════════════════════════════════════════════════════════════════════════════
+
+  Recording Phase:
+  ├─ Microphone denied ──► Show "Permission Denied" error
+  ├─ Audio too short ────► Show "Speak longer" prompt
+  └─ Recording crash ────► Show error + offer retry
+
+  Transcription Phase:
+  ├─ No internet ────────► Show "Connection error"
+  ├─ Groq API error ─────► Show "Transcription failed"
+  └─ Empty response ─────► Show "Didn't catch that"
+
+  TTS Phase:
+  ├─ Groq unavailable ──► Fallback to Web Speech API
+  ├─ Network error ─────► Show "Playback failed"
+  └─ Audio corrupt ─────► Skip to listening phase
+
+  Recovery:
+  └─ All errors offer: "Try Again" button to restart
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                              PHASE DIAGRAM
+═══════════════════════════════════════════════════════════════════════════════
+
+                              START
+                               │
+                               ▼
+                          ┌─────────┐
+                          │  IDLE   │ ◄────────────────┐
+                          └────┬────┘                  │
+                               │                      │
+                        Tap mic │                      │
+                               ▼                      │
+                    ┌─────────────────────┐           │
+                    │    LISTENING        │           │
+                    │ (Recording audio)   │           │
+                    └──────┬────────┬─────┘           │
+                           │        │                 │
+                      Tap mic  Wait 30sec            │
+                           │        │                 │
+                           ▼        ▼                 │
+                      ┌─────────────────────┐         │
+                      │   PROCESSING        │         │
+                      │ (Transcribing)      │         │
+                      └──────┬───────┬──────┘         │
+                             │       │                │
+                         Success   Error              │
+                             │       │                │
+                             ▼       ▼                │
+                    ┌────────────┐ Error dialog       │
+                    │ SPEAKING   │  │                 │
+                    │ (AI reply  │  │                 │
+                    │  + TTS)    │  └─ Retry ────────┤
+                    └─────┬──────┘                    │
+                          │                          │
+                          │ (Audio finished OR       │
+                          │  User interrupt)        │
+                          │                          │
+                          └──────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+EOF

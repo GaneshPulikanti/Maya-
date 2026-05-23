@@ -1,0 +1,60 @@
+{
+  "name": "@canopylabs/capacitor-audio-recorder",
+  "version": "1.0.0",
+  "description": "Native Android audio recording plugin for Capacitor",
+  "main": "dist/plugin.cjs",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "scripts": {
+    "verify": "npm run verify:ios && npm run verify:android && npm run verify:web",
+    "verify:ios": "xcodebuild -workspace ios/Plugin.xcworkspace -scheme Plugin -configuration Release -destination 'platform=iOS Simulator,name=iPhone 14'",
+    "verify:android": "cd android && ./gradlew clean build testRelease && cd ..",
+    "verify:web": "npm run build",
+    "lint": "npm run prettier -- --check && npm run eslint",
+    "fmt": "npm run prettier -- --write && npm run eslint -- --fix",
+    "prettier": "prettier \"**/*.ts\" \"**/*.tsx\" --ignore-path=.prettierignore",
+    "eslint": "eslint . --ext ts,tsx --ignore-path=.eslintignore",
+    "docgen": "docgen --api AudioRecorderPlugin --output-readme README_GENERATED.md --output-json dist/docs.json",
+    "build": "npm run clean && npm run docgen && tsc && npm run bundle",
+    "bundle": "rollup -c rollup.config.js",
+    "clean": "rimraf ./dist",
+    "prepublishOnly": "npm run verify && npm run lint"
+  },
+  "keywords": [
+    "capacitor",
+    "plugin",
+    "native",
+    "audio",
+    "recording"
+  ],
+  "author": "Canopy Labs",
+  "license": "MIT",
+  "devDependencies": {
+    "@capacitor/android": "^5.0.0",
+    "@capacitor/core": "^5.0.0",
+    "@capacitor/docgen": "latest",
+    "@capacitor/ios": "^5.0.0",
+    "@rollup/plugin-node-resolve": "latest",
+    "eslint": "latest",
+    "prettier": "latest",
+    "rimraf": "latest",
+    "rollup": "latest",
+    "typescript": "latest"
+  },
+  "peerDependencies": {
+    "@capacitor/core": "^5.0.0"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios/Plugin"
+    },
+    "android": {
+      "src": "android/src/main"
+    }
+  },
+  "prettier": {
+    "semi": true,
+    "singleQuote": true,
+    "trailingComma": "none"
+  }
+}

@@ -40,38 +40,45 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
   const [shareSession, setShareSession] = useState(null)
   const menuRef = useRef(null)
 
-  const getGroupMembers = (session) => {
-    let participants = new Set()
+  const getGroupInitials = (session) => {
+    const msgs = (sessionsMessages && sessionsMessages[session.id]) || []
+    const participants = new Set()
+    
+    if (user?.email) {
+      participants.add(user.email.split('@')[0])
+    }
 
-    if (session.participants && session.participants.length > 0) {
-      session.participants.forEach(p => participants.add(p))
-    } else {
-      const msgs = (sessionsMessages && sessionsMessages[session.id]) || []
-      msgs.forEach(msg => {
-        if (msg.role === 'user' && msg.content) {
-          const nameMatch = msg.content.match(/^\[Reply to:[^\]]*\]\s*\[(.*?)\]:\s*(.*)$/s) || msg.content.match(/^\[(.*?)\]:\s*(.*)$/s)
-          if (nameMatch) {
-            participants.add(nameMatch[1])
-          }
+    msgs.forEach(msg => {
+      if (msg.role === 'user' && msg.content) {
+        const nameMatch = msg.content.match(/^\[Reply to:[^\]]*\]\s*\[(.*?)\]:\s*(.*)$/s) || msg.content.match(/^\[(.*?)\]:\s*(.*)$/s)
+        if (nameMatch) {
+          participants.add(nameMatch[1])
         }
-      })
-      if (user?.email) {
-        participants.add(user.email) // Use full email for consistent hashing
       }
-    }
-
-    if (participants.size === 0) {
-      if (user?.email) participants.add(user.email)
-      else participants.add('User')
-    }
-
-    return Array.from(participants).map(name => {
-      // For consistency with the account icon, we use the first letter of the name
-      const initial = name[0].toUpperCase()
-      // Hash the full name/email to ensure the color matches the account icon
-      const colorClass = getAvatarColor(name)
-      return { name, initial, colorClass }
     })
+
+    const initialsList = Array.from(participants).map(name => {
+      const cleanName = name.includes('@') ? name.split('@')[0] : name
+      const userInitial = user?.email ? user.email[0].toUpperCase() : 'U'
+      
+      if (cleanName.toLowerCase() === 'user') return userInitial
+      if (user?.email && (name.toLowerCase() === user.email.toLowerCase() || cleanName.toLowerCase() === user.email.split('@')[0].toLowerCase())) {
+        return userInitial
+      }
+      
+      const words = cleanName.trim().split(/[\s._-]+/)
+      if (words.length >= 2 && words[0] && words[1]) {
+        return (words[0][0] + words[1][0]).toUpperCase()
+      }
+      const text = cleanName.replace(/[^a-zA-Z0-9]/g, '')
+      if (text.length >= 2) {
+        return text.substring(0, 2).toUpperCase()
+      }
+      return (text || cleanName || 'U').substring(0, 2).toUpperCase()
+    })
+
+    const uniqueInitials = Array.from(new Set(initialsList))
+    return uniqueInitials.length > 0 ? uniqueInitials : [user?.email ? user.email[0].toUpperCase() : 'U']
   }
 
   useEffect(() => {
@@ -121,9 +128,7 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
   const handleCreate = async () => {
     try {
       await createSession("New Conversation")
-      if (window.innerWidth < 768) {
-        toggleSidebar()
-      }
+      toggleSidebar()
     } catch (e) {
       alert("Failed to start new chat")
     }
@@ -238,9 +243,7 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
                   onClick={() => {
                     if (editingId === session.id) return // Don't switch active session while editing its name
                     setActiveSessionId(session.id)
-                    if (window.innerWidth < 768) {
-                      toggleSidebar() // Close mobile drawer on choice
-                    }
+                    toggleSidebar() // Close mobile drawer on choice
                   }}
                   className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-sans cursor-pointer transition-all duration-300 relative border ${
                     isActive 
@@ -249,7 +252,8 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
                   }`}
                 >
                   <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                    <div className="flex-1 min-w-0 flex flex-col pl-1">
+                    <MessageSquare className={`w-4 h-4 shrink-0 mt-0.5 ${isActive ? 'text-white' : 'text-butter-300'}`} />
+                    <div className="flex-1 min-w-0 flex flex-col">
                       {editingId === session.id ? (
                         <input
                           type="text"
@@ -289,27 +293,27 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
                           <div className="w-5.5 h-5.5 rounded-full border border-wine-900 bg-rose-600 text-rose-50 flex items-center justify-center text-[9px] font-bold shadow-sm select-none">
                             M
                           </div>
-                          {getGroupMembers(session).slice(0, 2).map((member, idx) => (
+                          {getGroupInitials(session).slice(0, 2).map((initial, idx) => (
                             <div 
                               key={idx}
-                              className={`w-5.5 h-5.5 rounded-full border border-wine-900 ${member.colorClass} flex items-center justify-center text-[9px] font-bold shadow-sm select-none`}
+                              className={`w-5.5 h-5.5 rounded-full border border-wine-900 ${getAvatarColor(initial)} flex items-center justify-center text-[9px] font-bold shadow-sm select-none`}
                             >
-                              {member.initial}
+                              {initial}
                             </div>
                           ))}
                         </div>
                       )}
 
                       {/* Active session: show compact participant/account avatars left of the options menu */}
-                      {isActive && isGroup && (
+                      {isActive && (
                         <div className="flex items-center gap-1 mr-2">
-                          {getGroupMembers(session).slice(0, 3).map((member, idx) => (
+                          {getGroupInitials(session).slice(0, 3).map((initial, idx) => (
                             <div
                               key={idx}
-                              title={member.name}
-                              className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold shadow-sm border border-wine-900 ${member.colorClass}`}
+                              title={initial}
+                              className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold shadow-sm border border-wine-900 ${getAvatarColor(initial)}`}
                             >
-                              {member.initial}
+                              {initial}
                             </div>
                           ))}
                         </div>
