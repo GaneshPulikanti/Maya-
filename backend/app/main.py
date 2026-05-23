@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import engine, Base
-from app.routes import auth, chat, memory, upload, vision, voice
+from app.routes import auth, chat, memory, upload, vision, voice, debug, debug2, debug3, debug_recover, debug_sort
 
 # Set up logging configuration
 logging.basicConfig(
@@ -83,6 +83,11 @@ app.include_router(memory.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(vision.router, prefix="/api")
 app.include_router(voice.router, prefix="/api")
+app.include_router(debug.router, prefix="/api")
+app.include_router(debug2.router, prefix="/api")
+app.include_router(debug3.router, prefix="/api")
+app.include_router(debug_recover.router, prefix="/api")
+app.include_router(debug_sort.router, prefix="/api")
 
 # Mount static uploads directory for pinning image files dynamically
 import os
