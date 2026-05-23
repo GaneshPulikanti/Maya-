@@ -1,4 +1,4 @@
-package com.canopylabs.maya.plugins;
+package org.maya.companion;
 
 import android.media.MediaRecorder;
 import android.os.Build;
@@ -13,7 +13,11 @@ import org.json.JSONObject;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import androidx.core.content.ContextCompat;
+import org.apache.cordova.CordovaPlugin;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import org.maya.companion.AudioRecorderPlugin;
 
+@CapacitorPlugin(name = "AudioRecorder")
 public class AudioRecorderPlugin extends CordovaPlugin {
     private MediaRecorder mediaRecorder;
     private String recordingFilePath;

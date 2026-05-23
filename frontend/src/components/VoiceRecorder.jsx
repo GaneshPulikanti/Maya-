@@ -11,6 +11,8 @@ if (typeof window !== 'undefined' && window.Capacitor) {
   try {
     isCapacitorAvailable = true
     console.log("AudioRecorder plugin registered")
+    console.log("Capacitor AudioRecorder ACTIVE") // 👈 ADD HERE
+
     const { registerPlugin } = window.Capacitor
     AudioRecorder = registerPlugin('AudioRecorder')
   } catch (err) {
@@ -44,9 +46,11 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
     setRecordingTime(0)
 
     // Try Capacitor plugin first on Android devices
-    if (isAndroidRef.current && AudioRecorder && isCapacitorAvailable) {
+    if (AudioRecorder && isCapacitorAvailable) {
       try {
+        console.log("Using native Capacitor recorder")
         await AudioRecorder.startRecording()
+        recordingMethodRef.current = 'capacitor'
         setRecordingMethod('capacitor')
         setIsRecording(true)
         
@@ -63,7 +67,7 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
 
     // Fallback to MediaRecorder API (works on web and some Android WebViews)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      //const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       
       // Determine supported mime type
       let options = {}

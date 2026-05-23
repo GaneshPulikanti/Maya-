@@ -11,6 +11,8 @@ if (typeof window !== 'undefined' && window.Capacitor) {
   try {
     isCapacitorAvailable = true
     const { registerPlugin } = window.Capacitor
+    console.log("Capacitor available:", Capacitor)
+    console.log("Registering AudioRecorder plugin")
     AudioRecorder = registerPlugin('AudioRecorder')
   } catch (err) {
     console.warn('Capacitor audio plugin not available')

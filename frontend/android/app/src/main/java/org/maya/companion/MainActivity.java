@@ -1,5 +1,6 @@
 package org.maya.companion;
 
+import com.canopylabs.maya.plugins.AudioRecorderPlugin;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -8,21 +9,17 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.BridgeActivity;
-import com.getcapacitor.Plugin;
-
-import com.canopylabs.maya.plugins.AudioRecorderPlugin;
 
 public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
 
-        // REGISTER PLUGIN
         registerPlugin(AudioRecorderPlugin.class);
 
         super.onCreate(savedInstanceState);
 
-        // Request microphone permission
+        // Request microphone permission at startup
         if (ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.RECORD_AUDIO
@@ -32,6 +29,28 @@ public class MainActivity extends BridgeActivity {
                     this,
                     new String[]{Manifest.permission.RECORD_AUDIO},
                     1
+            );
+        }
+    }
+
+    @Override
+    public void onStart() {
+
+        super.onStart();
+
+        if (this.bridge != null && this.bridge.getWebView() != null) {
+
+            this.bridge.getWebView().setWebChromeClient(
+                new com.getcapacitor.BridgeWebChromeClient(this.bridge) {
+
+                    @Override
+                    public void onPermissionRequest(
+                            final android.webkit.PermissionRequest request
+                    ) {
+
+                        request.grant(request.getResources());
+                    }
+                }
             );
         }
     }
