@@ -359,14 +359,14 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     return (
       <div
         key={msg.id}
-        className={`flex flex-col max-w-[85%] transition-all duration-300 rounded-2xl ${
+        className={`flex flex-col max-w-[85%] transition-all duration-300 rounded-2xl animate-bubble-entry ${
           isUser ? 'self-end items-end w-full' : 'self-start items-start w-full'
         }`}
       >
         {/* Bubble content */}
         <div className="w-full flex flex-col min-w-0">
           <div
-            className={`px-4 py-3 rounded-2xl text-base leading-relaxed font-sans shadow-md animate-bubble-entry text-left w-full ${
+            className={`px-4 py-3 rounded-2xl text-base leading-relaxed font-sans shadow-md text-left w-full ${
               isUser
                 ? 'bg-wine-900 border border-rose-500/10 text-butter-100 rounded-tr-none font-light tracking-wide'
                 : 'bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 rounded-tl-none shadow-rose-500/5'

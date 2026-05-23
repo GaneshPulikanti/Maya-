@@ -917,7 +917,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     if (!msg.content) {
       return (
         <div className="flex flex-col w-full">
-          <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-rose-500/5 border border-rose-500/20 flex gap-1.5 items-center shadow-md animate-bubble-entry w-max">
+          <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-rose-500/5 border border-rose-500/20 flex gap-1.5 items-center shadow-md w-max">
             <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
             <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
             <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
@@ -939,7 +939,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
             return (
               <div 
                 key={idx}
-                className="px-4 py-3 rounded-2xl rounded-tl-none text-base leading-relaxed font-sans bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 shadow-md shadow-rose-500/5 animate-bubble-entry w-full"
+                className="px-4 py-3 rounded-2xl rounded-tl-none text-base leading-relaxed font-sans bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 shadow-md shadow-rose-500/5 w-full"
               >
                 {renderMessageText(block.content)}
               </div>
@@ -1002,7 +1002,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       <div className="flex flex-col gap-1 items-end w-full">
         {replyData.hasReply && replyData.replyUi}
         <div 
-          className={`px-4 py-3 rounded-2xl rounded-tr-none text-base leading-relaxed font-sans border shadow-md animate-bubble-entry text-left font-light tracking-wide ${
+          className={`px-4 py-3 rounded-2xl rounded-tr-none text-base leading-relaxed font-sans border shadow-md text-left font-light tracking-wide ${
             isEditing 
               ? 'w-full max-w-lg bg-wine-900/90 border-rose-500/40 p-4 text-butter-100' 
               : 'bg-rose-500 border-rose-600/15 text-white shadow-rose-500/15'
@@ -1288,7 +1288,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
                 <div
                   key={msg.id}
                   id={`msg-${msg.id}`}
-                  className={`flex flex-col w-full md:max-w-[85%] lg:max-w-[75%] transition-all duration-300 rounded-2xl ${
+                  className={`flex flex-col w-full md:max-w-[85%] lg:max-w-[75%] transition-all duration-300 rounded-2xl animate-bubble-entry ${
                     isUser 
                       ? 'self-end items-end' 
                       : 'self-start items-start'

@@ -156,7 +156,7 @@ export const ChatProvider = ({ children }) => {
 
   // Load active session messages
   const fetchMessages = async (sessionId, isBackground = false) => {
-    if (!token || !sessionId) return
+    if (!token || !sessionId || sessionId === 'new') return
     if (!isBackground) setLoadingMessages(true)
     try {
       const response = await api.get(`/api/chat/sessions/${sessionId}/messages`)
@@ -322,28 +322,21 @@ export const ChatProvider = ({ children }) => {
 
   // Create new session
   const createSession = async (title = "New Conversation") => {
-    // If the current active session is already empty, just reuse it instead of creating another one!
-    if (activeSessionId && messages.length === 0 && !isStreaming) {
-      const activeSession = sessions.find(s => s.id === activeSessionId)
-      if (activeSession) {
-        return activeSession
-      }
-    }
-
-    try {
-      const response = await api.post('/api/chat/sessions', { title })
-      const newSession = response.data
-      setSessions(prev => [newSession, ...prev])
-      setActiveSessionId(newSession.id, true)
-      return newSession
-    } catch (error) {
-      console.error("Failed to create session:", error)
-      throw error
-    }
+    // Just switch to the "new" virtual session state. 
+    // The actual DB session will be created when the first message is sent.
+    setActiveSessionId("new", true)
+    setMessages([])
+    return { id: "new", title }
   }
 
   // Delete session
   const deleteSession = async (sessionId, isAutoPurge = false) => {
+    if (sessionId === 'new') {
+      setActiveSessionId(null)
+      setMessages([])
+      return
+    }
+
     try {
       await api.delete(`/api/chat/sessions/${sessionId}`)
       setSessions(prev => prev.filter(s => s.id !== sessionId))
@@ -382,6 +375,7 @@ export const ChatProvider = ({ children }) => {
 
   // Rename session
   const renameSession = async (sessionId, newTitle) => {
+    if (sessionId === 'new') return { id: 'new', title: newTitle }
     try {
       const response = await api.put(`/api/chat/sessions/${sessionId}`, { title: newTitle })
       const updatedSession = response.data
@@ -404,6 +398,22 @@ export const ChatProvider = ({ children }) => {
   // Custom fetch-based SSE real-time token stream reader
   const sendMessage = async (content, isVoice = false) => {
     if (!activeSessionId || !content.trim() || isStreaming) return
+
+    let currentSessionId = activeSessionId
+    
+    // If this is the first message in a virtual "new" session, create the real session now
+    if (currentSessionId === 'new') {
+      try {
+        const response = await api.post('/api/chat/sessions', { title: "New Conversation" })
+        const newSession = response.data
+        setSessions(prev => [newSession, ...prev])
+        currentSessionId = newSession.id
+        setActiveSessionId(currentSessionId, true)
+      } catch (error) {
+        console.error("Failed to create session for first message:", error)
+        return
+      }
+    }
 
     const userMessage = {
       id: `local-usr-${Date.now()}`,
@@ -433,7 +443,7 @@ export const ChatProvider = ({ children }) => {
 
     try {
       // Use raw fetch for handling stream tokens with bearer auth
-      const response = await fetch(`${baseUrl}/api/chat/sessions/${activeSessionId}/send`, {
+      const response = await fetch(`${baseUrl}/api/chat/sessions/${currentSessionId}/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
