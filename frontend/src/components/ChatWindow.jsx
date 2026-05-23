@@ -1283,7 +1283,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
               return (
                 <div
-                  key={msg.id}
+                  key={msg.client_id || msg.id}
                   id={`msg-${msg.id}`}
                   className={`flex flex-col w-full md:max-w-[85%] lg:max-w-[75%] transition-all duration-300 rounded-2xl ${msg.isLocal ? 'animate-bubble-entry' : ''} ${
                     isUser 

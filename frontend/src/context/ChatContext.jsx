@@ -183,30 +183,44 @@ export const ChatProvider = ({ children }) => {
         }
       }
 
-      if (orphanIds.length > 0) {
-        // Fire deletes in parallel — best-effort; ignore individual failures
-        if (!isBackground) {
-          await Promise.allSettled(
-            orphanIds.map(id => api.delete(`/api/chat/messages/${id}`))
-          )
+        const mergeWithPrev = (serverMsgs, prevMsgs) => {
+          if (!isBackground) return serverMsgs;
+          return serverMsgs.map((serverMsg, idx) => {
+            const prevMsg = prevMsgs[idx];
+            // If the message occupies the same index and has the same role, it's structurally the same message
+            if (prevMsg && prevMsg.role === serverMsg.role && prevMsg.client_id) {
+              return { ...serverMsg, client_id: prevMsg.client_id };
+            }
+            return serverMsg;
+          });
+        };
+
+        if (orphanIds.length > 0) {
+          // Fire deletes in parallel — best-effort; ignore individual failures
+          if (!isBackground) {
+            await Promise.allSettled(
+              orphanIds.map(id => api.delete(`/api/chat/messages/${id}`))
+            )
+          }
+          const filtered = msgs.filter(m => !orphanIds.includes(m.id))
+          setMessages(prev => {
+            if (isBackground && prev.length === filtered.length && (filtered.length === 0 || prev[prev.length-1]?.id === filtered[filtered.length-1]?.id)) {
+              return prev;
+            }
+            const merged = mergeWithPrev(filtered, prev);
+            setSessionsMessages(sPrev => ({ ...sPrev, [sessionId]: merged }))
+            return merged;
+          })
+        } else {
+          setMessages(prev => {
+            if (isBackground && prev.length === msgs.length && (msgs.length === 0 || prev[prev.length-1]?.id === msgs[msgs.length-1]?.id)) {
+              return prev;
+            }
+            const merged = mergeWithPrev(msgs, prev);
+            setSessionsMessages(sPrev => ({ ...sPrev, [sessionId]: merged }))
+            return merged;
+          })
         }
-        const filtered = msgs.filter(m => !orphanIds.includes(m.id))
-        setMessages(prev => {
-          if (isBackground && prev.length === filtered.length && (filtered.length === 0 || prev[prev.length-1]?.id === filtered[filtered.length-1]?.id)) {
-            return prev;
-          }
-          setSessionsMessages(sPrev => ({ ...sPrev, [sessionId]: filtered }))
-          return filtered;
-        })
-      } else {
-        setMessages(prev => {
-          if (isBackground && prev.length === msgs.length && (msgs.length === 0 || prev[prev.length-1]?.id === msgs[msgs.length-1]?.id)) {
-            return prev;
-          }
-          setSessionsMessages(sPrev => ({ ...sPrev, [sessionId]: msgs }))
-          return msgs;
-        })
-      }
     } catch (error) {
       console.error("Failed to load message history:", error)
     } finally {
@@ -417,6 +431,7 @@ export const ChatProvider = ({ children }) => {
 
     const userMessage = {
       id: `local-usr-${Date.now()}`,
+      client_id: `local-usr-${Date.now()}`,
       role: 'user',
       content: content.trim(),
       created_at: new Date().toISOString(),
@@ -427,6 +442,7 @@ export const ChatProvider = ({ children }) => {
     const assistantMessageId = `local-ast-${Date.now()}`
     const initialAssistantMessage = {
       id: assistantMessageId,
+      client_id: assistantMessageId,
       role: 'assistant',
       content: "",
       created_at: new Date().toISOString(),
@@ -682,6 +698,7 @@ export const ChatProvider = ({ children }) => {
     const assistantMessageId = `local-ast-regen-${Date.now()}`
     const initialAssistantMessage = {
       id: assistantMessageId,
+      client_id: assistantMessageId,
       role: 'assistant',
       content: "",
       created_at: new Date().toISOString(),

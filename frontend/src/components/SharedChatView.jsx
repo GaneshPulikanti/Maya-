@@ -116,7 +116,18 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     const fetchHistory = () => {
       api.get(`/api/chat/shared/${sessionId}`)
         .then(response => {
-          setSession(response.data)
+          setSession(prev => {
+            if (!prev) return response.data;
+            const msgs = response.data.messages;
+            const merged = msgs.map((serverMsg, idx) => {
+              const prevMsg = prev.messages[idx];
+              if (prevMsg && prevMsg.role === serverMsg.role && prevMsg.client_id) {
+                return { ...serverMsg, client_id: prevMsg.client_id };
+              }
+              return serverMsg;
+            });
+            return { ...response.data, messages: merged };
+          })
           setError(null)
         })
         .catch(err => {
@@ -208,6 +219,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     // Add optimistic user message locally
     const tempUserMsg = {
       id: `local-usr-${Date.now()}`,
+      client_id: `local-usr-${Date.now()}`,
       role: 'user',
       content: formattedContent,
       created_at: new Date().toISOString(),
@@ -217,6 +229,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     const assistantMessageId = `local-ast-${Date.now()}`
     const initialAssistantMessage = {
       id: assistantMessageId,
+      client_id: assistantMessageId,
       role: 'assistant',
       content: "",
       created_at: new Date().toISOString(),
@@ -366,7 +379,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
     return (
       <div
-        key={msg.id}
+        key={msg.client_id || msg.id}
         className={`flex flex-col max-w-[85%] transition-all duration-300 rounded-2xl ${msg.isLocal ? 'animate-bubble-entry' : ''} ${
           isUser ? 'self-end items-end w-full' : 'self-start items-start w-full'
         }`}
