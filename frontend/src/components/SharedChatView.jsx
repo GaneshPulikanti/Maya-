@@ -412,8 +412,27 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
               No messages found. Start the conversation below!
             </div>
           ) : (
-            // Sort messages by created_at timestamp to ensure chronological order and proper blending for group chats
-            [...messages].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).map((msg) => renderMessage(msg))
+            <>
+            {[...messages].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).map((msg) => renderMessage(msg))}
+            
+            {/* Global Typing Indicator for Group Chat Sync */}
+            {messages.length > 0 && messages[messages.length - 1].role === 'user' && (
+              <div className="flex flex-col max-w-[85%] transition-all duration-300 rounded-2xl self-start items-start w-full animate-bubble-entry">
+                <div className="w-full flex flex-col min-w-0">
+                  <div className="px-4 py-3 rounded-2xl text-base leading-relaxed font-sans shadow-md text-left w-max bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 rounded-tl-none shadow-rose-500/5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider mb-1 select-none text-rose-400">
+                      Maya
+                    </div>
+                    <div className="flex gap-1.5 items-center py-2">
+                      <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+                      <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+                      <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            </>
           )}
 
 

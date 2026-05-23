@@ -1379,6 +1379,24 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
             })
           )}
 
+          {/* Global Typing Indicator for Group Chat Sync */}
+          {displayMessages.length > 0 && displayMessages[displayMessages.length - 1].role === 'user' && (
+            <div className="flex flex-col w-full md:max-w-[85%] lg:max-w-[75%] transition-all duration-300 rounded-2xl self-start items-start animate-bubble-entry">
+              <div className="w-full">
+                <div className="flex flex-col w-full">
+                  <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-rose-500/5 border border-rose-500/20 flex gap-1.5 items-center shadow-md w-max">
+                    <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+                    <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+                    <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+                  </div>
+                </div>
+              </div>
+              <span className="text-[10px] text-butter-300 font-light mt-1.5 font-sans flex items-center gap-1.5 select-none w-full justify-start pl-1">
+                <span className="block">Maya</span>
+              </span>
+            </div>
+          )}
+
 
 
           <div ref={messagesEndRef} />
