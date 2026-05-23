@@ -292,6 +292,43 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   }
 
   const handleDeleteMessage = async (msgId) => {
+    const vd = messageVersions[msgId]
+    if (vd && vd.pairs.length > 1) {
+      if (window.confirm("Delete only this version of the message and its reply?")) {
+        try {
+          const msgIndex = messages.findIndex(m => m.id === msgId)
+          const nextMsg = msgIndex !== -1 ? messages[msgIndex + 1] : null
+          const assistantMsgId = (nextMsg && nextMsg.role === 'assistant') ? nextMsg.id : null
+
+          const isDeletingActive = (vd.current === vd.pairs.length - 1)
+          const updatedPairs = vd.pairs.filter((_, idx) => idx !== vd.current)
+          const newCurrent = Math.min(vd.current, updatedPairs.length - 1)
+
+          if (isDeletingActive) {
+            const newActivePair = updatedPairs[updatedPairs.length - 1]
+            // Update user message content in backend
+            await editMessage(msgId, newActivePair.user)
+            // Update assistant message content in backend if assistant exists
+            if (assistantMsgId && newActivePair.assistant) {
+              await editMessage(assistantMsgId, newActivePair.assistant)
+            } else if (assistantMsgId && !newActivePair.assistant) {
+              await api.delete(`/api/chat/messages/${assistantMsgId}`)
+              setMessages(prev => prev.filter(m => m.id !== assistantMsgId))
+            }
+          }
+
+          // Update the version history state
+          setMessageVersions(prev => ({
+            ...prev,
+            [msgId]: { pairs: updatedPairs, current: newCurrent }
+          }))
+        } catch (err) {
+          alert("Failed to delete message version: " + (err.message || err))
+        }
+      }
+      return
+    }
+
     if (window.confirm("Delete this message and Maya's reply? This can't be undone.")) {
       try {
         // Find the assistant message that immediately follows this user message
@@ -299,6 +336,11 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         const nextMsg = msgIndex !== -1 ? messages[msgIndex + 1] : null
         const assistantMsgId = (nextMsg && nextMsg.role === 'assistant') ? nextMsg.id : null
         await deleteMessagePair(msgId, assistantMsgId)
+        setMessageVersions(prev => {
+          const copy = { ...prev }
+          delete copy[msgId]
+          return copy
+        })
       } catch (err) {
         alert("Failed to delete message: " + (err.message || err))
       }

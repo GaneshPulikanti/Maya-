@@ -183,6 +183,13 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     }
   }
 
+  const handleChatClick = () => {
+    if (!user) {
+      sessionStorage.setItem(isGroupChat ? 'join_shared_session_id' : 'continue_shared_session_id', sessionId)
+      onBackToApp()
+    }
+  }
+
 
 
   const renderMessage = (msg) => {
@@ -389,7 +396,10 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       </header>
 
       {/* Shared Conversation Transcript Body */}
-      <div className="flex-1 overflow-y-auto px-4 py-8 md:px-8 space-y-6 w-full max-w-4xl mx-auto flex flex-col">
+      <div 
+        onClick={handleChatClick}
+        className={`flex-1 overflow-y-auto px-4 py-8 md:px-8 space-y-6 w-full max-w-4xl mx-auto flex flex-col ${!user ? 'cursor-pointer' : ''}`}
+      >
         {/* Header Banner */}
         <div className="text-center py-6 border-b border-rose-500/10 flex flex-col items-center gap-3 select-none shrink-0">
           <span className="px-3 py-1 rounded-full text-[10px] font-sans font-bold uppercase tracking-wider bg-rose-500/10 text-rose-300 border border-rose-500/20 animate-pulse">

@@ -91,6 +91,7 @@ const Dashboard = () => {
 // Router switcher based on active JWT Authentication states
 const AppContent = () => {
   const { user, loading } = useAuth()
+  const [showAuthForShared, setShowAuthForShared] = useState(false)
 
   // Intercept shared link URL path directly from the browser window location
   const pathParts = window.location.pathname.split('/')
@@ -110,11 +111,15 @@ const AppContent = () => {
     )
   }
 
-  if (isSharedPath) {
-    if (!user) {
-      sessionStorage.setItem('join_shared_session_id', pathParts[2])
-      return <Auth />
-    }
+  if (isSharedPath && !user && !showAuthForShared) {
+    return (
+      <SharedChatView 
+        sessionId={pathParts[2]} 
+        onBackToApp={() => {
+          setShowAuthForShared(true)
+        }} 
+      />
+    )
   }
 
   // Switch between Auth page and Dashboard
