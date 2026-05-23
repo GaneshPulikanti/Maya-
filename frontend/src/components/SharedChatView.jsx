@@ -206,10 +206,18 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       content: formattedContent,
       created_at: new Date().toISOString()
     }
+    
+    const assistantMessageId = `local-ast-${Date.now()}`
+    const initialAssistantMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: "",
+      created_at: new Date().toISOString()
+    }
 
     setSession(prev => ({
       ...prev,
-      messages: [...(prev?.messages || []), tempUserMsg]
+      messages: [...(prev?.messages || []), tempUserMsg, initialAssistantMessage]
     }))
     setInput("")
     setSending(true)
@@ -245,6 +253,13 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             const token = tokenQueue.shift()
             fullAssistantText += token
             setStreamingMessage(fullAssistantText)
+            
+            setSession(prev => ({
+              ...prev,
+              messages: prev.messages.map(m => 
+                m.id === assistantMessageId ? { ...m, content: fullAssistantText } : m
+              )
+            }))
             
             // Speed up if the queue gets too large so it doesn't lag too far behind
             const delay = tokenQueue.length > 20 ? 5 : 20
@@ -299,6 +314,18 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
   }
 
   const renderMessage = (msg) => {
+    if (msg.role === 'assistant' && !msg.content) {
+      return (
+        <div key={msg.id} className="flex flex-col self-start items-start w-full">
+          <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-rose-500/5 border border-rose-500/20 flex gap-1.5 items-center shadow-md animate-bubble-entry">
+            <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+            <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+            <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+          </div>
+        </div>
+      )
+    }
+
     const isUser = msg.role === 'user'
     let displayName = isUser ? 'User' : 'Maya'
     let cleanContent = msg.content
@@ -516,48 +543,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             [...messages].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).map((msg) => renderMessage(msg))
           )}
 
-          {/* SSE Streaming Message bubble */}
-          {sending && streamingMessage && (
-            <div className="flex flex-col max-w-[85%] self-start items-start w-full" id="msg-streaming">
-              <div className="flex flex-col gap-1 items-end w-full">
-                <div className="px-4 py-3 rounded-2xl text-base leading-relaxed font-sans shadow-md bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 rounded-tl-none shadow-rose-500/5 text-left w-full">
-                  <div className="text-[10px] font-bold uppercase tracking-wider mb-1 select-none text-rose-400">
-                    Maya
-                  </div>
-                  {formatText(streamingMessage)}
-                </div>
-              </div>
-              <span className="text-[10px] text-butter-300 font-light mt-1.5 font-sans flex items-center gap-1.5 select-none w-full justify-start pl-1">
-                <span className="truncate max-w-[100px] sm:max-w-[150px] block" title="Maya">
-                  Maya
-                </span>
-                <span className="text-[8px] shrink-0">•</span>
-                <span className="flex items-center gap-0.5 opacity-50 cursor-not-allowed transition-opacity"><Copy className="w-3 h-3" /> Copy</span>
-                <span className="text-[8px] shrink-0">•</span>
-                <span className="flex items-center gap-0.5 opacity-50 cursor-not-allowed transition-opacity"><Volume2 className="w-3 h-3" /> Speak</span>
-              </span>
-            </div>
-          )}
 
-          {/* Thinking bubble */}
-          {sending && !streamingMessage && (
-            <div className="flex flex-col self-start items-start" id="msg-thinking">
-              <div className="px-4 py-3.5 rounded-2xl rounded-tl-none bg-rose-500/5 border border-rose-500/20 flex gap-1.5 items-center shadow-md animate-bubble-entry">
-                <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
-                <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
-                <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
-              </div>
-              <span className="text-[10px] text-butter-300 font-light mt-1.5 font-sans flex items-center gap-1.5 select-none w-full justify-start pl-1">
-                <span className="truncate max-w-[100px] sm:max-w-[150px] block" title="Maya">
-                  Maya
-                </span>
-                <span className="text-[8px] shrink-0">•</span>
-                <span className="flex items-center gap-0.5 opacity-30 cursor-not-allowed"><Copy className="w-3 h-3" /> Copy</span>
-                <span className="text-[8px] shrink-0">•</span>
-                <span className="flex items-center gap-0.5 opacity-30 cursor-not-allowed"><Volume2 className="w-3 h-3" /> Speak</span>
-              </span>
-            </div>
-          )}
           <div ref={messagesEndRef} />
         </div>
       </div>

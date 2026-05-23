@@ -413,7 +413,15 @@ export const ChatProvider = ({ children }) => {
     }
 
     // Add user message locally for instant visual feedback
-    setMessages(prev => [...prev, userMessage])
+    const assistantMessageId = `local-ast-${Date.now()}`
+    const initialAssistantMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: "",
+      created_at: new Date().toISOString()
+    }
+    
+    setMessages(prev => [...prev, userMessage, initialAssistantMessage])
     setIsStreaming(true)
     setStreamingMessage("")
 
@@ -459,6 +467,10 @@ export const ChatProvider = ({ children }) => {
             const token = tokenQueue.shift()
             fullAssistantText += token
             setStreamingMessage(fullAssistantText)
+            
+            setMessages(prev => prev.map(m => 
+              m.id === assistantMessageId ? { ...m, content: fullAssistantText } : m
+            ))
             
             // Speed up if the queue gets too large so it doesn't lag too far behind
             const delay = tokenQueue.length > 20 ? 5 : 20
@@ -516,13 +528,12 @@ export const ChatProvider = ({ children }) => {
       // Conclude Streaming — commit whatever text was generated (even if aborted)
       if (fullAssistantText.trim()) {
         const suffix = streamAborted ? ' *(stopped)*' : ''
-        const finalAssistantMessage = {
-          id: `local-ast-${Date.now()}`,
-          role: 'assistant',
-          content: fullAssistantText + suffix,
-          created_at: new Date().toISOString()
-        }
-        setMessages(prev => [...prev, finalAssistantMessage])
+        const finalContent = fullAssistantText + suffix
+        setMessages(prev => prev.map(m => 
+          m.id === assistantMessageId ? { ...m, content: finalContent } : m
+        ))
+      } else {
+        setMessages(prev => prev.filter(m => m.id !== assistantMessageId))
       }
       setStreamingMessage(null)
       setIsStreaming(false)
@@ -656,15 +667,33 @@ export const ChatProvider = ({ children }) => {
   const regenerateAfterEdit = async (userMessageId, onComplete) => {
     if (isStreaming) return
 
-    // Optimistically remove the old assistant reply from local state
+    const assistantMessageId = `local-ast-regen-${Date.now()}`
+    const initialAssistantMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: "",
+      created_at: new Date().toISOString()
+    }
+
+    // Optimistically remove the old assistant reply and insert the new empty one
     setMessages(prev => {
       const idx = prev.findIndex(m => m.id === userMessageId)
       if (idx === -1) return prev
       const next = prev[idx + 1]
+      let filtered = prev
       if (next && next.role === 'assistant') {
-        return prev.filter((_, i) => i !== idx + 1)
+        filtered = prev.filter((_, i) => i !== idx + 1)
       }
-      return prev
+      
+      const newIdx = filtered.findIndex(m => m.id === userMessageId)
+      if (newIdx !== -1) {
+        return [
+          ...filtered.slice(0, newIdx + 1),
+          initialAssistantMessage,
+          ...filtered.slice(newIdx + 1)
+        ]
+      }
+      return [...filtered, initialAssistantMessage]
     })
 
     setIsStreaming(true)
@@ -706,6 +735,10 @@ export const ChatProvider = ({ children }) => {
             const token = tokenQueue.shift()
             fullAssistantText += token
             setStreamingMessage(fullAssistantText)
+            
+            setMessages(prev => prev.map(m => 
+              m.id === assistantMessageId ? { ...m, content: fullAssistantText } : m
+            ))
             
             // Speed up if the queue gets too large so it doesn't lag too far behind
             const delay = tokenQueue.length > 20 ? 5 : 20
@@ -757,24 +790,15 @@ export const ChatProvider = ({ children }) => {
       if (fullAssistantText.trim()) {
         const suffix = streamAborted ? ' *(stopped)*' : ''
         const finalContent = fullAssistantText + suffix
-        const finalAssistantMessage = {
-          id: `local-ast-regen-${Date.now()}`,
-          role: 'assistant',
-          content: finalContent,
-          created_at: new Date().toISOString()
-        }
-        // INSERT right after the user message — not at the end of the array
-        setMessages(prev => {
-          const userIdx = prev.findIndex(m => m.id === userMessageId)
-          if (userIdx === -1) return [...prev, finalAssistantMessage]
-          return [
-            ...prev.slice(0, userIdx + 1),
-            finalAssistantMessage,
-            ...prev.slice(userIdx + 1)
-          ]
-        })
+        
+        setMessages(prev => prev.map(m => 
+          m.id === assistantMessageId ? { ...m, content: finalContent } : m
+        ))
+        
         // Notify caller with the full text so it can store version history
         if (typeof onComplete === 'function') onComplete(finalContent)
+      } else {
+        setMessages(prev => prev.filter(m => m.id !== assistantMessageId))
       }
 
       setStreamingMessage(null)
