@@ -590,63 +590,65 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
           className="px-5 py-2.5 rounded-xl font-bold font-sans text-xs bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500 text-white hover:scale-102 active:scale-98 transition-all duration-300 flex items-center gap-2 shadow-[0_0_20px_rgba(158, 2, 50, 0.35)] cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
         >
           <span className="text-white font-bold">
-            {isCloning ? "Cloning..." : (isGroupChat ? "Join Chat" : "Clone to Account")}
+            {isCloning ? "Cloning..." : (isGroupChat ? "Join Chat" : "Continue Chat")}
           </span>
           <ArrowRight className="w-4 h-4 text-white" />
         </button>
       </div>
 
-      {/* Collaborative Input Bar at the very bottom */}
-      <div className="p-4 border-t border-wine-800/40 bg-wine-900/30 backdrop-blur-md shrink-0">
-        <form onSubmit={handleSend} className="flex gap-2 items-center max-w-4xl mx-auto w-full">
-          {/* Guest Name input */}
-          <div className="relative shrink-0 select-none">
-            <input
-              type="text"
-              value={guestName}
-              maxLength={15}
-              onChange={(e) => {
-                const val = e.target.value || "Guest"
-                setGuestName(val)
-                localStorage.setItem('group_chat_guest_name', val)
+      {/* Collaborative Input Bar at the very bottom - Only visible for group chats */}
+      {isGroupChat && (
+        <div className="p-4 border-t border-wine-800/40 bg-wine-900/30 backdrop-blur-md shrink-0">
+          <form onSubmit={handleSend} className="flex gap-2 items-center max-w-4xl mx-auto w-full">
+            {/* Guest Name input */}
+            <div className="relative shrink-0 select-none">
+              <input
+                type="text"
+                value={guestName}
+                maxLength={15}
+                onChange={(e) => {
+                  const val = e.target.value || "Guest"
+                  setGuestName(val)
+                  localStorage.setItem('group_chat_guest_name', val)
+                }}
+                placeholder="Your Name"
+                className="w-24 sm:w-32 px-3 py-3 rounded-xl bg-wine-950 border border-rose-500/20 text-butter-100 text-xs font-semibold uppercase tracking-wide focus:outline-none focus:border-rose-500/40 transition-colors text-center font-sans"
+                title="Enter your name to chat in the room"
+              />
+            </div>
+            
+            {/* Chat input */}
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSend(e)
+                }
               }}
-              placeholder="Your Name"
-              className="w-24 sm:w-32 px-3 py-3 rounded-xl bg-wine-950 border border-rose-500/20 text-butter-100 text-xs font-semibold uppercase tracking-wide focus:outline-none focus:border-rose-500/40 transition-colors text-center font-sans"
-              title="Enter your name to chat in the room"
+              disabled={sending}
+              placeholder={sending ? "Maya is responding..." : "Type a message..."}
+              rows={1}
+              style={{ maxHeight: '150px' }}
+              className="flex-1 min-w-0 px-4 py-3 rounded-xl rose-input font-sans text-base focus:outline-none bg-wine-950 text-butter-50 border border-rose-500/20 focus:border-rose-500/40 resize-none overflow-y-auto"
             />
-          </div>
-          
-          {/* Chat input */}
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSend(e)
-              }
-            }}
-            disabled={sending}
-            placeholder={sending ? "Maya is responding..." : "Type a message..."}
-            rows={1}
-            style={{ maxHeight: '150px' }}
-            className="flex-1 min-w-0 px-4 py-3 rounded-xl rose-input font-sans text-base focus:outline-none bg-wine-950 text-butter-50 border border-rose-500/20 focus:border-rose-500/40 resize-none overflow-y-auto"
-          />
 
-          <button
-            type="submit"
-            disabled={!input.trim() || sending}
-            className="p-3 rounded-xl bg-rose-500 hover:bg-rose-400 text-butter-50 transition-all duration-300 disabled:opacity-40 disabled:pointer-events-none hover:shadow-lg hover:shadow-rose-500/25 shrink-0 flex items-center justify-center cursor-pointer"
-          >
-            {sending ? (
-              <Loader2 className="w-4 h-4 text-wine-900 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4 text-wine-900" />
-            )}
-          </button>
-        </form>
-      </div>
+            <button
+              type="submit"
+              disabled={!input.trim() || sending}
+              className="p-3 rounded-xl bg-rose-500 hover:bg-rose-400 text-butter-50 transition-all duration-300 disabled:opacity-40 disabled:pointer-events-none hover:shadow-lg hover:shadow-rose-500/25 shrink-0 flex items-center justify-center cursor-pointer"
+            >
+              {sending ? (
+                <Loader2 className="w-4 h-4 text-wine-900 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4 text-wine-900" />
+              )}
+            </button>
+          </form>
+        </div>
+      )}
 
       {isShareModalOpen && (
         <ShareModal
