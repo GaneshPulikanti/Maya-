@@ -85,9 +85,9 @@ function speakText(rawText, onDone) {
   }
 
   // 2. In parallel, try Groq Orpheus — if it responds, swap to higher-quality audio
-  api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 10000 })
+   api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 10000 })
     .then(res => {
-      if (finished || !res?.data?.size) return
+    if (finished || !res?.data?.size) return
       // Orpheus came back — cancel Web Speech and play Orpheus instead
       window.speechSynthesis?.cancel()
       finished = false // reset finished flag to allow Orpheus end handler to trigger done()
