@@ -574,13 +574,13 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
         <div className="flex flex-col text-center sm:text-left gap-0.5">
           {isGroupChat ? (
             <>
-              <span className="text-sm font-bold text-white font-sans">Join this group chat</span>
-              <span className="text-xs text-butter-100 font-light">Add your voice to the collaborative conversation.</span>
+              <span className="text-sm font-bold text-rose-600 font-sans">Join this group chat</span>
+              <span className="text-xs text-rose-500 font-light">Add your voice to the collaborative conversation.</span>
             </>
           ) : (
             <>
-              <span className="text-sm font-bold text-white font-sans">Want to save a copy?</span>
-              <span className="text-xs text-butter-100 font-light">Copy this entire discussion directly into your own account.</span>
+              <span className="text-sm font-bold text-rose-600 font-sans">Want to save a copy?</span>
+              <span className="text-xs text-rose-500 font-light">Copy this entire discussion directly into your own account.</span>
             </>
           )}
         </div>
