@@ -380,12 +380,6 @@ export const ChatProvider = ({ children }) => {
 
   // Custom wrapped active session state setter with automatic empty session purge
   const setActiveSessionId = (nextId, isCreatingNewSession = false) => {
-    if (!isCreatingNewSession && token && activeSessionId && activeSessionId !== nextId && messages.length === 0 && !isStreaming) {
-      const sessionIdToDelete = activeSessionId
-      deleteSession(sessionIdToDelete, true).catch(err => {
-        console.error("Failed to auto-delete empty session:", err)
-      })
-    }
     _setActiveSessionId(nextId)
   }
 
