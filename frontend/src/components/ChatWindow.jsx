@@ -342,13 +342,10 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     // 1. If currently streaming
     if (isStreaming) {
       if (!scrolledForStreamRef.current) {
-        const targetElement = document.getElementById('msg-streaming') || document.getElementById('msg-thinking')
-        if (targetElement) {
-          // Scroll to the start of the assistant response bubble so user can read from the beginning
-          targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          scrolledForStreamRef.current = true
-          isAutoScrollingRef.current = false
-        }
+        // Scroll to the bottom so the user's input and the thinking/generation icon are visible
+        scrollToBottom('smooth')
+        scrolledForStreamRef.current = true
+        isAutoScrollingRef.current = false
       }
       // Sync downscroll button, but do not auto-scroll to the bottom while streaming
       handleScroll()

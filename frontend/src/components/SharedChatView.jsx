@@ -142,14 +142,20 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     messagesEndRef.current?.scrollIntoView({ behavior })
   }
 
+  const scrolledForStreamRef = useRef(false)
+
   // Only auto-scroll if user is actively in conversation (has sent messages), not on initial load
   useEffect(() => {
     // Don't auto-scroll on initial page load; user should see title first
-    // Only scroll to bottom when messages are actively being added during conversation
-    if (sending || streamingMessage) {
-      scrollToBottom('smooth')
+    if (sending) {
+      if (!scrolledForStreamRef.current) {
+        scrollToBottom('smooth')
+        scrolledForStreamRef.current = true
+      }
+    } else {
+      scrolledForStreamRef.current = false
     }
-  }, [streamingMessage, sending])
+  }, [sending])
 
   const copyMessageText = async (text, id) => {
     try {
