@@ -435,6 +435,19 @@ export const ChatProvider = ({ children }) => {
     setStreamingMessage("")
 
     let currentSessionId = activeSessionId
+
+    // Bubble the active session to the top immediately for snappy UI
+    if (currentSessionId && currentSessionId !== 'new') {
+      setSessions(prev => {
+        const idx = prev.findIndex(s => s.id === currentSessionId)
+        if (idx > 0) {
+          const copy = [...prev]
+          const [moved] = copy.splice(idx, 1)
+          return [moved, ...copy]
+        }
+        return prev
+      })
+    }
     
     // If this is the first message in a virtual "new" session, create the real session now in the background
     if (currentSessionId === 'new') {
