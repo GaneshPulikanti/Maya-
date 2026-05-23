@@ -204,7 +204,8 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       id: `local-usr-${Date.now()}`,
       role: 'user',
       content: formattedContent,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      isLocal: true
     }
     
     const assistantMessageId = `local-ast-${Date.now()}`
@@ -212,7 +213,8 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       id: assistantMessageId,
       role: 'assistant',
       content: "",
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      isLocal: true
     }
 
     setSession(prev => ({
@@ -257,7 +259,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             setSession(prev => ({
               ...prev,
               messages: prev.messages.map(m => 
-                m.id === assistantMessageId ? { ...m, content: fullAssistantText } : m
+                m.id === assistantMessageId ? { ...m, content: fullAssistantText, isLocal: true } : m
               )
             }))
             
@@ -359,7 +361,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     return (
       <div
         key={msg.id}
-        className={`flex flex-col max-w-[85%] transition-all duration-300 rounded-2xl animate-bubble-entry ${
+        className={`flex flex-col max-w-[85%] transition-all duration-300 rounded-2xl ${msg.isLocal ? 'animate-bubble-entry' : ''} ${
           isUser ? 'self-end items-end w-full' : 'self-start items-start w-full'
         }`}
       >

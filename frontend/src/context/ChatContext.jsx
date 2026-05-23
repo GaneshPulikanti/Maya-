@@ -419,7 +419,8 @@ export const ChatProvider = ({ children }) => {
       id: `local-usr-${Date.now()}`,
       role: 'user',
       content: content.trim(),
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      isLocal: true
     }
 
     // Add user message locally for instant visual feedback
@@ -428,7 +429,8 @@ export const ChatProvider = ({ children }) => {
       id: assistantMessageId,
       role: 'assistant',
       content: "",
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      isLocal: true
     }
     
     setMessages(prev => [...prev, userMessage, initialAssistantMessage])
@@ -540,7 +542,7 @@ export const ChatProvider = ({ children }) => {
         const suffix = streamAborted ? ' *(stopped)*' : ''
         const finalContent = fullAssistantText + suffix
         setMessages(prev => prev.map(m => 
-          m.id === assistantMessageId ? { ...m, content: finalContent } : m
+          m.id === assistantMessageId ? { ...m, content: finalContent, isLocal: true } : m
         ))
       } else {
         setMessages(prev => prev.filter(m => m.id !== assistantMessageId))
@@ -682,7 +684,8 @@ export const ChatProvider = ({ children }) => {
       id: assistantMessageId,
       role: 'assistant',
       content: "",
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      isLocal: true
     }
 
     // Optimistically remove the old assistant reply and insert the new empty one
@@ -802,7 +805,7 @@ export const ChatProvider = ({ children }) => {
         const finalContent = fullAssistantText + suffix
         
         setMessages(prev => prev.map(m => 
-          m.id === assistantMessageId ? { ...m, content: finalContent } : m
+          m.id === assistantMessageId ? { ...m, content: finalContent, isLocal: true } : m
         ))
         
         // Notify caller with the full text so it can store version history
