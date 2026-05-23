@@ -231,8 +231,10 @@ export const ChatProvider = ({ children }) => {
   // Reload history whenever active session changes
   useEffect(() => {
     if (activeSessionId) {
-      setMessages([]) // Instantly clear messages to prevent leaking/flashing previous conversation
-      fetchMessages(activeSessionId)
+      if (!isStreamingRef.current) {
+        setMessages([]) // Instantly clear messages to prevent leaking/flashing previous conversation
+        fetchMessages(activeSessionId)
+      }
     } else {
       setMessages([])
     }
