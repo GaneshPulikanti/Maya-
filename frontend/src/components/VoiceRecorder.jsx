@@ -10,6 +10,7 @@ let isCapacitorAvailable = false
 if (typeof window !== 'undefined' && window.Capacitor) {
   try {
     isCapacitorAvailable = true
+    console.log("AudioRecorder plugin registered")
     const { registerPlugin } = window.Capacitor
     AudioRecorder = registerPlugin('AudioRecorder')
   } catch (err) {
@@ -36,6 +37,9 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
   }, [])
 
   const startRecording = async () => {
+    console.log("START RECORDING CALLED")
+    console.log("Plugin available:", isCapacitorAvailable)
+    console.log("AudioRecorder:", AudioRecorder)
     audioChunksRef.current = []
     setRecordingTime(0)
 
