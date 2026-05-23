@@ -30,24 +30,8 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
 
   // Collaborative chat states
-  const [input, setInput] = useState("")
-  const [guestName, setGuestName] = useState(() => {
-    return localStorage.getItem('group_chat_guest_name') || "Guest"
-  })
-  const [sending, setSending] = useState(false)
-  const [streamingMessage, setStreamingMessage] = useState(null)
   const [speakingId, setSpeakingId] = useState(null)
   const messagesEndRef = useRef(null)
-  const inputRef = useRef(null)
-
-  useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto'
-      if (input) {
-        inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 150) + 'px'
-      }
-    }
-  }, [input])
 
   const getAvatarColor = (name) => {
     const colors = [
@@ -153,20 +137,10 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     messagesEndRef.current?.scrollIntoView({ behavior })
   }
 
-  const scrolledForStreamRef = useRef(false)
-
-  // Only auto-scroll if user is actively in conversation (has sent messages), not on initial load
+  // Only auto-scroll on initial load if we want to snap to bottom, but for shared views it's usually better to start at the top
   useEffect(() => {
-    // Don't auto-scroll on initial page load; user should see title first
-    if (sending) {
-      if (!scrolledForStreamRef.current) {
-        scrollToBottom('smooth')
-        scrolledForStreamRef.current = true
-      }
-    } else {
-      scrolledForStreamRef.current = false
-    }
-  }, [sending])
+    // Optional: scrollToBottom('smooth') could go here if desired, but user should see title first
+  }, [session])
 
   const copyMessageText = async (text, id) => {
     try {
@@ -209,130 +183,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     }
   }
 
-  const handleSend = async (e) => {
-    e.preventDefault()
-    if (!input.trim() || sending) return
 
-    const userText = input.trim()
-    const formattedContent = `[${guestName}]: ${userText}`
-    
-    // Add optimistic user message locally
-    const tempUserMsg = {
-      id: `local-usr-${Date.now()}`,
-      client_id: `local-usr-${Date.now()}`,
-      role: 'user',
-      content: formattedContent,
-      created_at: new Date().toISOString(),
-      isLocal: true
-    }
-    
-    const assistantMessageId = `local-ast-${Date.now()}`
-    const initialAssistantMessage = {
-      id: assistantMessageId,
-      client_id: assistantMessageId,
-      role: 'assistant',
-      content: "",
-      created_at: new Date().toISOString(),
-      isLocal: true
-    }
-
-    setSession(prev => ({
-      ...prev,
-      messages: [...(prev?.messages || []), tempUserMsg, initialAssistantMessage]
-    }))
-    setInput("")
-    setSending(true)
-    setStreamingMessage("")
-
-    try {
-      // Post to public shared message sending endpoint
-      const baseUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:10000"
-      const response = await fetch(`${baseUrl}/api/chat/shared/${sessionId}/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ content: formattedContent })
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to send message to group session.')
-      }
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let partialChunk = ""
-      let fullAssistantText = ""
-
-      const tokenQueue = []
-      let isReadingFinished = false
-
-      // Artificial typewriter effect loop
-      const renderPromise = (async () => {
-        while (!isReadingFinished || tokenQueue.length > 0) {
-          if (tokenQueue.length > 0) {
-            const token = tokenQueue.shift()
-            fullAssistantText += token
-            setStreamingMessage(fullAssistantText)
-            
-            setSession(prev => ({
-              ...prev,
-              messages: prev.messages.map(m => 
-                m.id === assistantMessageId ? { ...m, content: fullAssistantText, isLocal: true } : m
-              )
-            }))
-            
-            // Speed up if the queue gets too large so it doesn't lag too far behind
-            const delay = tokenQueue.length > 20 ? 5 : 20
-            await new Promise(r => setTimeout(r, delay))
-          } else {
-            await new Promise(r => setTimeout(r, 10))
-          }
-        }
-      })()
-
-      try {
-        while (true) {
-          const { value, done } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = (partialChunk + chunk).split('\n')
-        partialChunk = lines.pop() || ""
-
-        for (const line of lines) {
-          const cleanedLine = line.trim()
-          if (!cleanedLine) continue
-          if (cleanedLine.startsWith('data: ')) {
-            const dataStr = cleanedLine.slice(6)
-            if (dataStr === '[DONE]') break
-            try {
-              const parsed = JSON.parse(dataStr)
-              if (parsed.token) {
-                tokenQueue.push(parsed.token)
-              }
-            } catch (e) {
-              console.warn("Could not parse token in stream:", e)
-            }
-          }
-        }
-      }
-      } finally {
-        isReadingFinished = true
-        await renderPromise
-      }
-
-      // Fetch immediately to sync DB state
-      const syncRes = await api.get(`/api/chat/shared/${sessionId}`)
-      setSession(syncRes.data)
-    } catch (err) {
-      console.error("Shared chat message send failed:", err)
-      alert("Error sending message: " + err.message)
-    } finally {
-      setSending(false)
-      setStreamingMessage(null)
-    }
-  }
 
   const renderMessage = (msg) => {
     if (msg.role === 'assistant' && !msg.content) {
@@ -596,59 +447,6 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
         </button>
       </div>
 
-      {/* Collaborative Input Bar at the very bottom - Only visible for group chats */}
-      {isGroupChat && (
-        <div className="p-4 border-t border-wine-800/40 bg-wine-900/30 backdrop-blur-md shrink-0">
-          <form onSubmit={handleSend} className="flex gap-2 items-center max-w-4xl mx-auto w-full">
-            {/* Guest Name input */}
-            <div className="relative shrink-0 select-none">
-              <input
-                type="text"
-                value={guestName}
-                maxLength={15}
-                onChange={(e) => {
-                  const val = e.target.value || "Guest"
-                  setGuestName(val)
-                  localStorage.setItem('group_chat_guest_name', val)
-                }}
-                placeholder="Your Name"
-                className="w-24 sm:w-32 px-3 py-3 rounded-xl bg-wine-950 border border-rose-500/20 text-butter-100 text-xs font-semibold uppercase tracking-wide focus:outline-none focus:border-rose-500/40 transition-colors text-center font-sans"
-                title="Enter your name to chat in the room"
-              />
-            </div>
-            
-            {/* Chat input */}
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSend(e)
-                }
-              }}
-              disabled={sending}
-              placeholder={sending ? "Maya is responding..." : "Type a message..."}
-              rows={1}
-              style={{ maxHeight: '150px' }}
-              className="flex-1 min-w-0 px-4 py-3 rounded-xl rose-input font-sans text-base focus:outline-none bg-wine-950 text-butter-50 border border-rose-500/20 focus:border-rose-500/40 resize-none overflow-y-auto"
-            />
-
-            <button
-              type="submit"
-              disabled={!input.trim() || sending}
-              className="p-3 rounded-xl bg-rose-500 hover:bg-rose-400 text-butter-50 transition-all duration-300 disabled:opacity-40 disabled:pointer-events-none hover:shadow-lg hover:shadow-rose-500/25 shrink-0 flex items-center justify-center cursor-pointer"
-            >
-              {sending ? (
-                <Loader2 className="w-4 h-4 text-wine-900 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4 text-wine-900" />
-              )}
-            </button>
-          </form>
-        </div>
-      )}
 
       {isShareModalOpen && (
         <ShareModal

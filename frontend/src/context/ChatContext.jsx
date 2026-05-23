@@ -413,22 +413,6 @@ export const ChatProvider = ({ children }) => {
   const sendMessage = async (content, isVoice = false) => {
     if (!activeSessionId || !content.trim() || isStreaming) return
 
-    let currentSessionId = activeSessionId
-    
-    // If this is the first message in a virtual "new" session, create the real session now
-    if (currentSessionId === 'new') {
-      try {
-        const response = await api.post('/api/chat/sessions', { title: "New Conversation" })
-        const newSession = response.data
-        setSessions(prev => [newSession, ...prev])
-        currentSessionId = newSession.id
-        setActiveSessionId(currentSessionId, true)
-      } catch (error) {
-        console.error("Failed to create session for first message:", error)
-        return
-      }
-    }
-
     const userMessage = {
       id: `local-usr-${Date.now()}`,
       client_id: `local-usr-${Date.now()}`,
@@ -449,10 +433,28 @@ export const ChatProvider = ({ children }) => {
       isLocal: true
     }
     
+    // Instantly show the messages on the screen so the user doesn't wait for session creation!
     setMessages(prev => [...prev, userMessage, initialAssistantMessage])
     setIsStreaming(true)
     setStreamingMessage("")
 
+    let currentSessionId = activeSessionId
+    
+    // If this is the first message in a virtual "new" session, create the real session now in the background
+    if (currentSessionId === 'new') {
+      try {
+        const response = await api.post('/api/chat/sessions', { title: "New Conversation" })
+        const newSession = response.data
+        setSessions(prev => [newSession, ...prev])
+        currentSessionId = newSession.id
+        setActiveSessionId(currentSessionId, true)
+      } catch (error) {
+        console.error("Failed to create session for first message:", error)
+        setIsStreaming(false)
+        return
+      }
+    }
+    
     // Create a fresh AbortController for this stream
     const abortController = new AbortController()
     abortControllerRef.current = abortController

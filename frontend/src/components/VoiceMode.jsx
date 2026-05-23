@@ -142,6 +142,7 @@ export default function VoiceMode({ isOpen, onClose }) {
   const streamRef         = useRef(null)
   const timerRef          = useRef(null)
   const speakCancelRef    = useRef(null)
+  const abortRecRef       = useRef(false) // Track intentional aborts
 
   // Keep phaseRef in sync (sync update, not async like useEffect)
   const setPhaseSync = (p) => { phaseRef.current = p; setPhase(p) }
@@ -201,8 +202,8 @@ export default function VoiceMode({ isOpen, onClose }) {
   }, [isStreaming, isOpen])
   // Note: intentionally omit `messages` from deps — we only care about isStreaming edge
 
-  // ── Stop all media & audio ─────────────────────────────────────────────────
   const stopEverything = () => {
+    abortRecRef.current = true // Mark as intentional abort
     if (speakCancelRef.current) {
       try { speakCancelRef.current() } catch {}
       speakCancelRef.current = null
@@ -236,7 +237,10 @@ export default function VoiceMode({ isOpen, onClose }) {
         streamRef.current?.getTracks().forEach(t => t.stop())
         streamRef.current = null
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-        if (mountedRef.current) await transcribeAndSend()
+        if (mountedRef.current && !abortRecRef.current) {
+          await transcribeAndSend()
+        }
+        abortRecRef.current = false // Reset for next time
       }
       rec.start()
       setPhaseSync(PHASE.LISTENING)
@@ -255,6 +259,7 @@ export default function VoiceMode({ isOpen, onClose }) {
 
   // ── Stop recording ─────────────────────────────────────────────────────────
   const stopRec = () => {
+    abortRecRef.current = false // Intentional user finish (not aborting)
     if (mediaRecRef.current?.state === 'recording') mediaRecRef.current.stop()
   }
 
