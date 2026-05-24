@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react'
 import { X, Loader2, Heart, AlertCircle } from 'lucide-react'
 import { api } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
+import { Filesystem, Directory } from '@capacitor/filesystem'
+import { Media } from '@capacitor-community/media'
 
 // ─── Capacitor Audio Plugin (Android native recording fallback) ──────────────
 let AudioRecorder = null
@@ -39,22 +41,38 @@ function toSpeechText(text) {
 // ─── TTS: Web Speech API fires immediately, Groq Orpheus upgrades if faster ──
 function speakText(rawText, onDone) {
   const text = toSpeechText(rawText)
-  if (!text) { onDone?.(); return () => { } }
+
+  if (!text) {
+    onDone?.()
+    return () => { }
+  }
 
   let finished = false
   let activeAudio = null
+  let nativePlaying = false
 
-  const done = () => {
-    if (!finished) {
-      finished = true
-      onDone?.()
+  const done = async () => {
+    if (!finished) return
+    finished = true
+
+    if (nativePlaying) {
+      try {
+        await Media.stop()
+      } catch { }
+
+      nativePlaying = false
     }
+
+    onDone?.()
+
   }
 
   // 1. Start Web Speech API immediately — guaranteed to work
+  let utter = null
+
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel()
-    const utter = new SpeechSynthesisUtterance(text)
+    utter = new SpeechSynthesisUtterance(text)
     utter.rate = 1.05
     utter.pitch = 1.05
     utter.volume = 1.0
@@ -84,51 +102,121 @@ function speakText(rawText, onDone) {
     setTimeout(done, 100)
   }
 
+
   // 2. In parallel, try Groq Orpheus — if it responds, swap to higher-quality audio
-   api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 10000 })
+  api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 10000 })
     .then(res => {
-    if (finished || !res?.data?.size) return
-      // Orpheus came back — cancel Web Speech and play Orpheus instead
-      window.speechSynthesis?.cancel()
-      finished = false // reset finished flag to allow Orpheus end handler to trigger done()
-      const url = URL.createObjectURL(res.data)
-      const audio = new Audio(url)
-      audio.setAttribute("playsinline", "true")
-      audio.volume = 1.0
-      activeAudio = audio
-      audio.onended = () => {
-        console.log("Audio ended")
-        URL.revokeObjectURL(url)
-        activeAudio = null
-        done()
-      }
-      audio.onerror = (e) => {
-        console.log("Audio playback error", e)
-        URL.revokeObjectURL(url)
-        activeAudio = null
-        done()
+      if (finished || !res?.data?.size) return
+
+      // Prevent browser speech callbacks
+      if (utter) {
+        utter.onend = null
+        utter.onerror = null
       }
 
-      audio.oncanplaythrough = async () => {
+      // Stop browser speech
+      window.speechSynthesis?.cancel()
+
+      // ANDROID NATIVE AUDIO PLAYBACK
+      const reader = new FileReader()
+
+      reader.onloadend = async () => {
         try {
-          console.log("Trying audio playback")
-          await audio.play()
-          console.log("Audio playback started")
+          const base64Data = reader.result.split(',')[1]
+
+          const fileName = `maya_voice_${Date.now()}.mp3`
+
+          // Save audio natively
+          const savedFile = await Filesystem.writeFile({
+            path: fileName,
+            data: base64Data,
+            directory: Directory.Cache
+          })
+
+          console.log("Saved audio:", savedFile.uri)
+
+          // PLAY USING NATIVE MEDIA PLAYER
+          await Media.play({
+            path: savedFile.uri
+          })
+          nativePlaying = true
+          console.log("Native playback started")
+
+          // Estimate duration and continue loop
+          const tempUrl = URL.createObjectURL(res.data)
+
+          const tempAudio = new Audio()
+          tempAudio.src = tempUrl
+
+          tempAudio.onloadedmetadata = () => {
+            URL.revokeObjectURL(tempUrl)
+            setTimeout(() => {
+              done()
+            }, (tempAudio.duration * 1000) + 500)
+          }
+
         } catch (err) {
-          console.log("Audio play failed", err)
-          done()
+          console.log("Native playback failed", err)
+
+          // FALLBACK TO NORMAL AUDIO
+          try {
+            const url = URL.createObjectURL(res.data)
+
+            const audio = new Audio(url)
+
+            activeAudio = audio
+
+            audio.onended = () => {
+              URL.revokeObjectURL(url)
+              activeAudio = null
+              done()
+            }
+
+            audio.onerror = () => {
+              URL.revokeObjectURL(url)
+              activeAudio = null
+              done()
+            }
+
+            await audio.play()
+
+          } catch (fallbackErr) {
+            console.log("Fallback playback failed", fallbackErr)
+            done()
+          }
         }
       }
+
+      reader.readAsDataURL(res.data)
     })
-    .catch(() => { /* Web Speech is already the fallback */ })
+    .catch(err => {
+      console.log("TTS request failed", err)
+    })
 
   // Return clean cancellation function
-  return () => {
+  // Return clean cancellation function
+  return async () => {
     finished = true
+
+    // Stop browser speech
     window.speechSynthesis?.cancel()
+
+    // Stop HTML audio fallback
     if (activeAudio) {
-      try { activeAudio.pause() } catch { }
+      try {
+        activeAudio.pause()
+      } catch { }
+
       activeAudio = null
+    }
+
+    // Stop native Android audio
+    if (nativePlaying) {
+      try {
+        await Media.stop()
+      } catch { }
+
+      nativePlaying = false
     }
   }
 }
@@ -483,7 +571,7 @@ export default function VoiceMode({ isOpen, onClose }) {
 
           {/* Header */}
           <div style={{ textAlign: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifycontent: 'center', gap: 7, marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 4 }}>
               <Heart size={13} fill="#9e0232" style={{ color: '#9e0232' }} />
               <span style={{ fontSize: 17, fontWeight: 700, color: '#9e0232', fontFamily: 'sans-serif', letterSpacing: '.01em' }}>
                 Voice Assistant Mode
