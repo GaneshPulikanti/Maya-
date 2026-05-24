@@ -43,6 +43,28 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   const [input, setInput] = useState('')
   const [speakingId, setSpeakingId] = useState(null)
 
+  // Unlock audio context on WebView/mobile platforms
+  const unlockAudio = () => {
+    if (window._audioUnlocked) return
+    try {
+      const audio = new Audio()
+      audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+      audio.volume = 0
+      audio.setAttribute("playsinline", "true")
+      document.body.appendChild(audio)
+      audio.play().then(() => {
+        window._audioUnlocked = true
+        console.log("Audio playback unlocked successfully")
+        try { document.body.removeChild(audio) } catch (e) {}
+      }).catch(err => {
+        console.warn("Audio unlock failed:", err)
+        try { document.body.removeChild(audio) } catch (e) {}
+      })
+    } catch (e) {
+      console.warn("Audio unlock error:", e)
+    }
+  }
+
   const getAvatarColor = (name) => {
     const colors = [
       'bg-rose-600 text-rose-50',
@@ -559,6 +581,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
   const handleSend = (e) => {
     e.preventDefault()
+    unlockAudio()
     if ((!input.trim() && !pinnedFile) || isStreaming || fileUploading) return
     
     let messageText = input.trim()
@@ -1210,6 +1233,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
           {/* Voice Assistant Toggle */}
           <button
             onClick={() => {
+              unlockAudio()
               setVoiceEnabled(prev => {
                 const nextVal = !prev
                 if (!nextVal && window.speechSynthesis) {

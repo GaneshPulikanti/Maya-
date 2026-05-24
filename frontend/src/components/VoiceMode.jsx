@@ -37,7 +37,7 @@ function toSpeechText(text) {
 }
 
 // ─── TTS: Web Speech API fires immediately, Groq Orpheus upgrades if faster ──
-function speakText(rawText, onDone) {
+function speakText(rawText, onDone, onError) {
   const text = toSpeechText(rawText)
 
   if (!text) {
@@ -70,6 +70,7 @@ function speakText(rawText, onDone) {
     }
 
     if (!window.speechSynthesis) {
+      onError?.("Web Speech API is not supported on this device.")
       done()
       return
     }
@@ -84,6 +85,7 @@ function speakText(rawText, onDone) {
       utter.onend = done
       utter.onerror = (e) => {
         console.error("SpeechSynthesis utterance error:", e)
+        onError?.("Text-to-speech error: " + (e.error || e.message || "synthesis failed"))
         done()
       }
 
@@ -293,6 +295,28 @@ export default function VoiceMode({ isOpen, onClose }) {
     isOpenRef.current = isOpen
   }, [isOpen])
 
+  // Unlock audio context on WebView/mobile platforms
+  const unlockAudio = () => {
+    if (window._audioUnlocked) return
+    try {
+      const audio = new Audio()
+      audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+      audio.volume = 0
+      audio.setAttribute("playsinline", "true")
+      document.body.appendChild(audio)
+      audio.play().then(() => {
+        window._audioUnlocked = true
+        console.log("Audio playback unlocked successfully")
+        try { document.body.removeChild(audio) } catch (e) {}
+      }).catch(err => {
+        console.warn("Audio unlock failed:", err)
+        try { document.body.removeChild(audio) } catch (e) {}
+      })
+    } catch (e) {
+      console.warn("Audio unlock error:", e)
+    }
+  }
+
   // Keep phaseRef in sync (sync update, not async like useEffect)
   const setPhaseSync = (p) => { phaseRef.current = p; setPhase(p) }
 
@@ -347,6 +371,10 @@ export default function VoiceMode({ isOpen, onClose }) {
 
       // CHATGPT VOICE STYLE: Automatically transition back to listening for natural, hands-free conversation loop!
       startRec()
+    }, (errMsg) => {
+      if (mountedRef.current) {
+        setError(errMsg)
+      }
     })
   }, [isStreaming, isOpen])
   // Note: intentionally omit `messages` from deps — we only care about isStreaming edge
@@ -544,6 +572,7 @@ export default function VoiceMode({ isOpen, onClose }) {
 
   // ── Mic button click ───────────────────────────────────────────────────────
   const handleMic = () => {
+    unlockAudio()
     if (phaseRef.current === PHASE.IDLE) {
       startRec()
     } else if (phaseRef.current === PHASE.LISTENING) {

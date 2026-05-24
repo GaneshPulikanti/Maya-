@@ -38,7 +38,29 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
     }
   }, [])
 
+  const unlockAudio = () => {
+    if (window._audioUnlocked) return
+    try {
+      const audio = new Audio()
+      audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+      audio.volume = 0
+      audio.setAttribute("playsinline", "true")
+      document.body.appendChild(audio)
+      audio.play().then(() => {
+        window._audioUnlocked = true
+        console.log("Audio playback unlocked successfully")
+        try { document.body.removeChild(audio) } catch (e) {}
+      }).catch(err => {
+        console.warn("Audio unlock failed:", err)
+        try { document.body.removeChild(audio) } catch (e) {}
+      })
+    } catch (e) {
+      console.warn("Audio unlock error:", e)
+    }
+  }
+
   const startRecording = async () => {
+    unlockAudio()
     console.log("START RECORDING CALLED")
     console.log("Plugin available:", isCapacitorAvailable)
     console.log("AudioRecorder:", AudioRecorder)
