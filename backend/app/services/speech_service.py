@@ -49,11 +49,10 @@ class SpeechService:
             response = await self.client.audio.speech.create(
                 model="canopylabs/orpheus-v1-english",
                 voice=voice,
-                input=text,
-                response_format="wav"
+                input=text
             )
-            # Response is a binary stream, read bytes asynchronously
-            return await response.read()
+            # Response is a binary stream, response.content has the bytes
+            return response.content
         except GroqError as ge:
             logger.error(f"Groq Text-to-Speech API error: {str(ge)}")
             raise Exception(f"Failed to generate speech with Groq Orpheus: {str(ge)}")

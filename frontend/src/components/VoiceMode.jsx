@@ -47,29 +47,106 @@ function speakText(rawText, onDone, onError) {
 
   let finished = false
   let activeAudio = null
+  let utter = null
+  let fallbackTimeout = null
+  let usingSpeechSynthesis = false
 
   const done = () => {
     if (finished) return
     finished = true
+    if (fallbackTimeout) {
+      clearTimeout(fallbackTimeout)
+      fallbackTimeout = null
+    }
     onDone?.()
   }
 
-  api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 15000 })
-    .then(res => {
-      if (finished) return
-      if (!res?.data?.size) {
-        console.warn("No audio returned from Orpheus TTS")
+  const runSpeechSynthesis = () => {
+    if (finished || usingSpeechSynthesis) return
+    usingSpeechSynthesis = true
+    if (fallbackTimeout) {
+      clearTimeout(fallbackTimeout)
+      fallbackTimeout = null
+    }
+
+    if (!window.speechSynthesis) {
+      onError?.("Web Speech API is not supported on this device.")
+      done()
+      return
+    }
+
+    try {
+      window.speechSynthesis.cancel()
+      utter = new SpeechSynthesisUtterance(text)
+      utter.lang = 'en-US' // Explicitly set language for Android TTS
+      utter.rate = 1.05
+      utter.pitch = 1.05
+      utter.volume = 1.0
+      utter.onend = done
+      utter.onerror = (e) => {
+        console.error("SpeechSynthesis utterance error:", e)
+        onError?.("Text-to-speech error: " + (e.error || e.message || "synthesis failed"))
         done()
+      }
+
+      const go = () => {
+        if (!finished) {
+          const voices = window.speechSynthesis.getVoices()
+          const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
+          
+          // On Android, skip setting custom voice to avoid remote voice download silent failures
+          if (!isAndroid) {
+            const femaleVoice = voices.find(v =>
+              ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name =>
+                v.name.includes(name)
+              )
+            ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
+            if (femaleVoice) utter.voice = femaleVoice
+          }
+          window.speechSynthesis.speak(utter)
+        }
+      }
+
+      if (window.speechSynthesis.getVoices().length > 0) {
+        go()
+      } else {
+        window.speechSynthesis.addEventListener('voiceschanged', go, { once: true })
+        // force-start in case 'voiceschanged' doesn't fire (some browsers)
+        setTimeout(go, 250)
+      }
+    } catch (err) {
+      console.error("SpeechSynthesis failed:", err)
+      done()
+    }
+  }
+
+  // Set a backup timeout: if Orpheus doesn't load/play within 4.5 seconds, fall back to SpeechSynthesis
+  fallbackTimeout = setTimeout(() => {
+    if (!finished && !activeAudio && !usingSpeechSynthesis) {
+      console.warn("Orpheus TTS timed out, falling back to SpeechSynthesis")
+      runSpeechSynthesis()
+    }
+  }, 4500)
+
+  // Fallback order: Web Audio (Groq Orpheus) → SpeechSynthesis
+  api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 8000 })
+    .then(res => {
+      if (finished || usingSpeechSynthesis) return
+      if (!res?.data?.size) {
+        runSpeechSynthesis()
         return
       }
 
       try {
+        // Use FileReader to convert Blob to base64 data URL
+        // Capacitor WebViews often block or fail to load blob: URLs
         const reader = new FileReader()
         reader.readAsDataURL(res.data)
         reader.onloadend = () => {
-          if (finished) return
+          if (finished || usingSpeechSynthesis) return
           const base64Url = reader.result
           
+          // Create audio element and append to DOM to bypass WebView detached audio blocks
           const audio = document.createElement('audio')
           audio.style.display = 'none'
           audio.src = base64Url
@@ -93,44 +170,60 @@ function speakText(rawText, onDone, onError) {
           }
 
           audio.onerror = (e) => {
-            console.error("Orpheus audio playback error:", e)
+            console.error("Audio playback error, falling back to SpeechSynthesis", e)
             cleanup()
             activeAudio = null
-            done()
+            runSpeechSynthesis()
           }
 
           audio.oncanplaythrough = async () => {
-            if (finished) {
+            if (finished || usingSpeechSynthesis) {
               cleanup()
               return
             }
+            
+            if (fallbackTimeout) {
+              clearTimeout(fallbackTimeout)
+              fallbackTimeout = null
+            }
             try {
+              console.log("Trying audio playback")
               await audio.play()
+              console.log("Audio playback started")
             } catch (err) {
-              console.error("Orpheus audio play failed:", err)
+              console.error("Audio play failed, falling back to SpeechSynthesis", err)
               cleanup()
               activeAudio = null
-              done()
+              runSpeechSynthesis()
             }
           }
         }
         reader.onerror = () => {
-          console.error("FileReader error loading Orpheus audio")
-          done()
+          console.error("FileReader error, falling back to SpeechSynthesis")
+          runSpeechSynthesis()
         }
       } catch (err) {
-        console.error("Orpheus audio setup failed", err)
-        done()
+        console.error("Audio setup failed, falling back to SpeechSynthesis", err)
+        runSpeechSynthesis()
       }
     })
     .catch(err => {
-      console.warn("Orpheus TTS request failed", err)
-      done()
+      console.warn("TTS request failed, falling back to SpeechSynthesis", err)
+      runSpeechSynthesis()
     })
 
   // Return clean cancellation function
   return () => {
     finished = true
+    if (fallbackTimeout) {
+      clearTimeout(fallbackTimeout)
+      fallbackTimeout = null
+    }
+    if (window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel()
+      } catch { }
+    }
     if (activeAudio) {
       try {
         activeAudio.pause()

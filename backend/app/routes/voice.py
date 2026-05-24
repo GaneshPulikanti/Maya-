@@ -55,7 +55,7 @@ async def speak_text(
 
     try:
         audio_bytes = await speech_service.text_to_speech(payload.text, payload.voice)
-        return Response(content=audio_bytes, media_type="audio/wav")
+        return Response(content=audio_bytes, media_type="audio/mpeg")
     except Exception as e:
         logger.error(f"Text-to-speech route failed: {str(e)}")
         raise HTTPException(
