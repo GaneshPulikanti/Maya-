@@ -604,10 +604,41 @@ export const ChatProvider = ({ children }) => {
               { responseType: 'blob', timeout: 12000 }
             )
             if (speakResponse.status === 200 && speakResponse.data.size > 0) {
-              const audioUrl = URL.createObjectURL(speakResponse.data)
-              const audio = new Audio(audioUrl)
-              audio.onended = () => URL.revokeObjectURL(audioUrl)
-              const playResult = await audio.play().catch(() => null)
+              // Switch to base64 Data URL to bypass Android WebView/Capacitor blob URL restrictions
+              const base64Url = await new Promise((resolve, reject) => {
+                const reader = new FileReader()
+                reader.readAsDataURL(speakResponse.data)
+                reader.onloadend = () => resolve(reader.result)
+                reader.onerror = reject
+              })
+              
+              // Create and append audio element to DOM to bypass WebView detached audio blocks
+              const audio = document.createElement('audio')
+              audio.style.display = 'none'
+              audio.src = base64Url
+              audio.setAttribute("playsinline", "true")
+              document.body.appendChild(audio)
+              
+              const cleanup = () => {
+                try {
+                  if (document.body.contains(audio)) {
+                    document.body.removeChild(audio)
+                  }
+                } catch (e) {}
+              }
+
+              audio.onended = () => {
+                cleanup()
+              }
+              audio.onerror = () => {
+                cleanup()
+              }
+
+              const playResult = await audio.play().catch((err) => {
+                console.error("Auto-play TTS audio failed:", err)
+                cleanup()
+                return null
+              })
               if (playResult !== null || audio.readyState > 0) {
                 orpheusWorked = true
               }
@@ -619,22 +650,34 @@ export const ChatProvider = ({ children }) => {
           // Web Speech API fallback if Orpheus failed
           if (!orpheusWorked && window.speechSynthesis) {
             const speak = () => {
-              window.speechSynthesis.cancel()
+              try {
+                window.speechSynthesis.cancel()
+              } catch (e) {}
               const utterance = new SpeechSynthesisUtterance(ttsText)
+              utterance.lang = 'en-US' // Explicitly set language for Android TTS
               utterance.rate = 1.0
               utterance.pitch = 1.05
               utterance.volume = 1.0
 
               // Explicitly choose a premium female voice
               const voices = window.speechSynthesis.getVoices()
-              const femaleVoice = voices.find(v => 
-                ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-                  v.name.includes(name)
-                )
-              ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-              if (femaleVoice) utterance.voice = femaleVoice
+              const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
+              
+              // On Android, skip setting custom voice to avoid remote voice download silent failures
+              if (!isAndroid) {
+                const femaleVoice = voices.find(v => 
+                  ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
+                    v.name.includes(name)
+                  )
+                ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
+                if (femaleVoice) utterance.voice = femaleVoice
+              }
 
-              window.speechSynthesis.speak(utterance)
+              try {
+                window.speechSynthesis.speak(utterance)
+              } catch (e) {
+                console.error("SpeechSynthesis speak failed:", e)
+              }
             }
             // Ensure voices are loaded
             if (window.speechSynthesis.getVoices().length > 0) {

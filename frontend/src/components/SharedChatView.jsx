@@ -52,13 +52,17 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
   const speakMessageText = (text, msgId) => {
     if (!window.speechSynthesis) return
     
-    if (window.speechSynthesis.speaking) {
-      window.speechSynthesis.cancel()
-      if (speakingId === msgId) {
-        setSpeakingId(null)
-        return
-      }
+    if (speakingId === msgId) {
+      try {
+        window.speechSynthesis.cancel()
+      } catch (e) {}
+      setSpeakingId(null)
+      return
     }
+
+    try {
+      window.speechSynthesis.cancel()
+    } catch (e) {}
     
     // Clean markdown and formatting
     const clean = text
@@ -73,24 +77,41 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       .slice(0, 400);
 
     const utterance = new SpeechSynthesisUtterance(clean)
+    utterance.lang = 'en-US' // Explicitly set language for Android WebView support
     utterance.rate = 1.0
     utterance.pitch = 1.05
     utterance.volume = 1.0
     
-    utterance.onend = () => setSpeakingId(null)
-    utterance.onerror = () => setSpeakingId(null)
+    // Use functional updater to avoid async cancel callbacks resetting the wrong speakingId
+    utterance.onend = () => {
+      setSpeakingId(prev => prev === msgId ? null : prev)
+    }
+    utterance.onerror = (e) => {
+      console.error("SpeechSynthesis error:", e)
+      setSpeakingId(prev => prev === msgId ? null : prev)
+    }
 
     // Choose premium female voice
     const voices = window.speechSynthesis.getVoices()
-    const femaleVoice = voices.find(v => 
-      ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-        v.name.includes(name)
-      )
-    ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-    if (femaleVoice) utterance.voice = femaleVoice
+    const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
+    
+    // On Android, skip setting custom voice to avoid remote voice download silent failures
+    if (!isAndroid) {
+      const femaleVoice = voices.find(v => 
+        ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
+          v.name.includes(name)
+        )
+      ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
+      if (femaleVoice) utterance.voice = femaleVoice
+    }
 
     setSpeakingId(msgId)
-    window.speechSynthesis.speak(utterance)
+    try {
+      window.speechSynthesis.speak(utterance)
+    } catch (err) {
+      console.error("SpeechSynthesis speak failed:", err)
+      setSpeakingId(prev => prev === msgId ? null : prev)
+    }
   }
 
   // 1. Setup continuous polling every 1 second to fetch latest messages for group collaboration (faster sync)
