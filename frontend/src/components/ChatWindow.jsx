@@ -42,26 +42,6 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
   const [input, setInput] = useState('')
   const [speakingId, setSpeakingId] = useState(null)
-  const activeAudioRef = useRef(null)
-
-  // Cleanup audio on unmount
-  useEffect(() => {
-    return () => {
-      if (activeAudioRef.current) {
-        try {
-          activeAudioRef.current.pause()
-          if (document.body.contains(activeAudioRef.current)) {
-            document.body.removeChild(activeAudioRef.current)
-          }
-        } catch (e) {}
-      }
-      if (window.speechSynthesis) {
-        try {
-          window.speechSynthesis.cancel()
-        } catch (e) {}
-      }
-    }
-  }, [])
 
   // Unlock audio context on WebView/mobile platforms
   const unlockAudio = () => {
@@ -101,88 +81,20 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     return colors[Math.abs(hash) % colors.length]
   }
 
-  const runSpeechSynthesisFallback = (cleanText, msgId) => {
-    if (!window.speechSynthesis) {
-      alert("SpeechSynthesis is not supported on this device.")
-      setSpeakingId(prev => prev === msgId ? null : prev)
-      return
-    }
-
-    const utterance = new SpeechSynthesisUtterance(cleanText)
-    utterance.lang = 'en-US'
-    utterance.rate = 1.0
-    utterance.pitch = 1.05
-    utterance.volume = 1.0
-
-    utterance.onend = () => {
-      setSpeakingId(prev => prev === msgId ? null : prev)
-    }
-    utterance.onerror = (e) => {
-      const errorMsg = "SpeechSynthesis error: " + (e.error || e.message || "unknown")
-      console.error(errorMsg, e)
-      alert(errorMsg)
-      setSpeakingId(prev => prev === msgId ? null : prev)
-    }
-
-    const voices = window.speechSynthesis.getVoices()
-    const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
-    
-    if (!isAndroid) {
-      const femaleVoice = voices.find(v => 
-        ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-          v.name.includes(name)
-        )
-      ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-      if (femaleVoice) utterance.voice = femaleVoice
-    }
-
-    try {
-      window.speechSynthesis.speak(utterance)
-    } catch (err) {
-      console.error("SpeechSynthesis fallback speak failed:", err)
-      alert("SpeechSynthesis speak failed: " + err.message)
-      setSpeakingId(prev => prev === msgId ? null : prev)
-    }
-  }
-
-  const speakMessageText = async (text, msgId) => {
-    if (!window.speechSynthesis && !activeAudioRef.current) return
+  const speakMessageText = (text, msgId) => {
+    if (!window.speechSynthesis) return
     
     if (speakingId === msgId) {
-      // Stop active playback
-      if (activeAudioRef.current) {
-        try {
-          activeAudioRef.current.pause()
-          if (document.body.contains(activeAudioRef.current)) {
-            document.body.removeChild(activeAudioRef.current)
-          }
-        } catch (e) {}
-        activeAudioRef.current = null
-      }
-      if (window.speechSynthesis) {
-        try {
-          window.speechSynthesis.cancel()
-        } catch (e) {}
-      }
+      try {
+        window.speechSynthesis.cancel()
+      } catch (e) {}
       setSpeakingId(null)
       return
     }
 
-    // Stop any currently playing audio/speech first
-    if (activeAudioRef.current) {
-      try {
-        activeAudioRef.current.pause()
-        if (document.body.contains(activeAudioRef.current)) {
-          document.body.removeChild(activeAudioRef.current)
-        }
-      } catch (e) {}
-      activeAudioRef.current = null
-    }
-    if (window.speechSynthesis) {
-      try {
-        window.speechSynthesis.cancel()
-      } catch (e) {}
-    }
+    try {
+      window.speechSynthesis.cancel()
+    } catch (e) {}
     
     // Clean markdown and formatting
     const clean = text
@@ -196,79 +108,41 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       .trim()
       .slice(0, 400)
 
-    if (!clean) return
-
-    setSpeakingId(msgId)
-
-    let orpheusWorked = false
-
-    // Try backend Groq Orpheus TTS first
-    try {
-      const response = await api.post(
-        '/api/voice/speak',
-        { text: clean, voice: 'diana' },
-        { responseType: 'blob', timeout: 10000 }
-      )
-      if (response.status === 200 && response.data.size > 0) {
-        // Switch to base64 Data URL to bypass Android WebView/Capacitor blob URL restrictions
-        const base64Url = await new Promise((resolve, reject) => {
-          const reader = new FileReader()
-          reader.readAsDataURL(response.data)
-          reader.onloadend = () => resolve(reader.result)
-          reader.onerror = reject
-        })
-
-        // Create and append audio element to DOM to bypass WebView detached audio blocks
-        const audio = document.createElement('audio')
-        audio.style.display = 'none'
-        audio.src = base64Url
-        audio.setAttribute("playsinline", "true")
-        document.body.appendChild(audio)
-        activeAudioRef.current = audio
-
-        const cleanup = () => {
-          try {
-            if (document.body.contains(audio)) {
-              document.body.removeChild(audio)
-            }
-          } catch (e) {}
-          if (activeAudioRef.current === audio) {
-            activeAudioRef.current = null
-          }
-        }
-
-        audio.onended = () => {
-          cleanup()
-          setSpeakingId(prev => prev === msgId ? null : prev)
-        }
-
-        audio.onerror = (e) => {
-          const errorMsg = "Orpheus audio element error (falling back): " + (e.message || "decoding/playback failed")
-          console.warn(errorMsg, e)
-          alert(errorMsg)
-          cleanup()
-          runSpeechSynthesisFallback(clean, msgId)
-        }
-
-        try {
-          await audio.play()
-          orpheusWorked = true
-        } catch (err) {
-          const errorMsg = "Orpheus play failed (falling back): " + err.message
-          console.error(errorMsg, err)
-          alert(errorMsg)
-          cleanup()
-          runSpeechSynthesisFallback(clean, msgId)
-        }
-      }
-    } catch (err) {
-      const errorMsg = "Orpheus TTS API request failed (falling back): " + (err.response?.data?.detail || err.message)
-      console.warn(errorMsg, err)
-      alert(errorMsg)
+    const utterance = new SpeechSynthesisUtterance(clean)
+    utterance.lang = 'en-US' // Explicitly set language for Android WebView support
+    utterance.rate = 1.0
+    utterance.pitch = 1.05
+    utterance.volume = 1.0
+    
+    // Use functional updater to avoid async cancel callbacks resetting the wrong speakingId
+    utterance.onend = () => {
+      setSpeakingId(prev => prev === msgId ? null : prev)
+    }
+    utterance.onerror = (e) => {
+      console.error("SpeechSynthesis error:", e)
+      setSpeakingId(prev => prev === msgId ? null : prev)
     }
 
-    if (!orpheusWorked) {
-      runSpeechSynthesisFallback(clean, msgId)
+    // Choose premium female voice
+    const voices = window.speechSynthesis.getVoices()
+    const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
+    
+    // On Android, skip setting custom voice to avoid remote voice download silent failures
+    if (!isAndroid) {
+      const femaleVoice = voices.find(v => 
+        ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
+          v.name.includes(name)
+        )
+      ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
+      if (femaleVoice) utterance.voice = femaleVoice
+    }
+
+    setSpeakingId(msgId)
+    try {
+      window.speechSynthesis.speak(utterance)
+    } catch (err) {
+      console.error("SpeechSynthesis speak failed:", err)
+      setSpeakingId(prev => prev === msgId ? null : prev)
     }
   }
 
