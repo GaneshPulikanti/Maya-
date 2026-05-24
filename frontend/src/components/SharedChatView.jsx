@@ -1,17 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Heart, MessageSquare, Copy, Check, ChevronLeft, ArrowRight, Loader2, Send, Volume2, VolumeX, Download } from 'lucide-react'
 import axios from 'axios'
-import { useAuth } from '../context/AuthContext'
+import { api, useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 import ShareModal from './ShareModal'
-
-// API base client setup matching AuthContext
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '',
-  headers: {
-    'Content-Type': 'application/json'
-  }
-})
 
 export default function SharedChatView({ sessionId, onBackToApp }) {
   const { user } = useAuth()
@@ -32,6 +24,48 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
   // Collaborative chat states
   const [speakingId, setSpeakingId] = useState(null)
   const messagesEndRef = useRef(null)
+  const activeAudioRef = useRef(null)
+
+  // Unlock audio context on WebView/mobile platforms
+  const unlockAudio = () => {
+    if (window._audioUnlocked) return
+    try {
+      const audio = new Audio()
+      audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+      audio.volume = 0
+      audio.setAttribute("playsinline", "true")
+      document.body.appendChild(audio)
+      audio.play().then(() => {
+        window._audioUnlocked = true
+        console.log("Audio playback unlocked successfully")
+        try { document.body.removeChild(audio) } catch (e) {}
+      }).catch(err => {
+        console.warn("Audio unlock failed:", err)
+        try { document.body.removeChild(audio) } catch (e) {}
+      })
+    } catch (e) {
+      console.warn("Audio unlock error:", e)
+    }
+  }
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (activeAudioRef.current) {
+        try {
+          activeAudioRef.current.pause()
+          if (document.body.contains(activeAudioRef.current)) {
+            document.body.removeChild(activeAudioRef.current)
+          }
+        } catch (e) {}
+      }
+      if (window.speechSynthesis) {
+        try {
+          window.speechSynthesis.cancel()
+        } catch (e) {}
+      }
+    }
+  }, [])
 
   const getAvatarColor = (name) => {
     const colors = [
@@ -49,20 +83,84 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     return colors[Math.abs(hash) % colors.length];
   }
 
-  const speakMessageText = (text, msgId) => {
-    if (!window.speechSynthesis) return
+  const runSpeechSynthesisFallback = (cleanText, msgId) => {
+    if (!window.speechSynthesis) {
+      setSpeakingId(prev => prev === msgId ? null : prev)
+      return
+    }
+
+    const utterance = new SpeechSynthesisUtterance(cleanText)
+    utterance.lang = 'en-US'
+    utterance.rate = 1.0
+    utterance.pitch = 1.05
+    utterance.volume = 1.0
+
+    utterance.onend = () => {
+      setSpeakingId(prev => prev === msgId ? null : prev)
+    }
+    utterance.onerror = (e) => {
+      console.error("SpeechSynthesis fallback error:", e)
+      setSpeakingId(prev => prev === msgId ? null : prev)
+    }
+
+    const voices = window.speechSynthesis.getVoices()
+    const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
     
+    if (!isAndroid) {
+      const femaleVoice = voices.find(v => 
+        ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
+          v.name.includes(name)
+        )
+      ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
+      if (femaleVoice) utterance.voice = femaleVoice
+    }
+
+    try {
+      window.speechSynthesis.speak(utterance)
+    } catch (err) {
+      console.error("SpeechSynthesis fallback speak failed:", err)
+      setSpeakingId(prev => prev === msgId ? null : prev)
+    }
+  }
+
+  const speakMessageText = async (text, msgId) => {
+    unlockAudio()
+
     if (speakingId === msgId) {
-      try {
-        window.speechSynthesis.cancel()
-      } catch (e) {}
+      // Stop active playback
+      if (activeAudioRef.current) {
+        try {
+          activeAudioRef.current.pause()
+          if (document.body.contains(activeAudioRef.current)) {
+            document.body.removeChild(activeAudioRef.current)
+          }
+        } catch (e) {}
+        activeAudioRef.current = null
+      }
+      if (window.speechSynthesis) {
+        try {
+          window.speechSynthesis.cancel()
+        } catch (e) {}
+      }
       setSpeakingId(null)
       return
     }
 
-    try {
-      window.speechSynthesis.cancel()
-    } catch (e) {}
+    // Stop any currently playing audio/speech first
+    if (activeAudioRef.current) {
+      try {
+        activeAudioRef.current.pause()
+        if (document.body.contains(activeAudioRef.current)) {
+          document.body.removeChild(activeAudioRef.current)
+        }
+      } catch (e) {}
+      activeAudioRef.current = null
+    }
+    if (window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel()
+      } catch (e) {}
+    }
     
     // Clean markdown and formatting
     const clean = text
@@ -76,41 +174,66 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       .trim()
       .slice(0, 400);
 
-    const utterance = new SpeechSynthesisUtterance(clean)
-    utterance.lang = 'en-US' // Explicitly set language for Android WebView support
-    utterance.rate = 1.0
-    utterance.pitch = 1.05
-    utterance.volume = 1.0
-    
-    // Use functional updater to avoid async cancel callbacks resetting the wrong speakingId
-    utterance.onend = () => {
-      setSpeakingId(prev => prev === msgId ? null : prev)
-    }
-    utterance.onerror = (e) => {
-      console.error("SpeechSynthesis error:", e)
-      setSpeakingId(prev => prev === msgId ? null : prev)
-    }
-
-    // Choose premium female voice
-    const voices = window.speechSynthesis.getVoices()
-    const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
-    
-    // On Android, skip setting custom voice to avoid remote voice download silent failures
-    if (!isAndroid) {
-      const femaleVoice = voices.find(v => 
-        ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-          v.name.includes(name)
-        )
-      ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-      if (femaleVoice) utterance.voice = femaleVoice
-    }
+    if (!clean) return
 
     setSpeakingId(msgId)
+    let orpheusWorked = false
+
+    // Try backend Groq Orpheus TTS first
     try {
-      window.speechSynthesis.speak(utterance)
+      const response = await api.post(
+        '/api/voice/speak',
+        { text: clean, voice: 'diana' },
+        { responseType: 'blob', timeout: 10000 }
+      )
+      if (response.status === 200 && response.data.size > 0) {
+        // Convert Blob to base64 Data URL to bypass WebView blob URL restrictions
+        const base64Url = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.readAsDataURL(response.data)
+          reader.onloadend = () => resolve(reader.result)
+          reader.onerror = reject
+        })
+
+        // Create and append audio element to DOM to bypass WebView detached audio blocks
+        const audio = document.createElement('audio')
+        audio.style.display = 'none'
+        audio.src = base64Url
+        audio.setAttribute("playsinline", "true")
+        document.body.appendChild(audio)
+        activeAudioRef.current = audio
+
+        const cleanup = () => {
+          try {
+            if (document.body.contains(audio)) {
+              document.body.removeChild(audio)
+            }
+          } catch (e) {}
+          if (activeAudioRef.current === audio) {
+            activeAudioRef.current = null
+          }
+        }
+
+        audio.onended = () => {
+          cleanup()
+          setSpeakingId(prev => prev === msgId ? null : prev)
+        }
+
+        audio.onerror = (e) => {
+          console.warn("Orpheus playback error, falling back to Web Speech:", e)
+          cleanup()
+          runSpeechSynthesisFallback(clean, msgId)
+        }
+
+        await audio.play()
+        orpheusWorked = true
+      }
     } catch (err) {
-      console.error("SpeechSynthesis speak failed:", err)
-      setSpeakingId(prev => prev === msgId ? null : prev)
+      console.warn("Orpheus TTS failed, falling back to Web Speech:", err)
+    }
+
+    if (!orpheusWorked) {
+      runSpeechSynthesisFallback(clean, msgId)
     }
   }
 
