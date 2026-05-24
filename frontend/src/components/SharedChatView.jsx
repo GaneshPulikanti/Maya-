@@ -110,8 +110,6 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
   }
 
   const speakMessageText = async (text, msgId) => {
-    if (!window.speechSynthesis && !activeAudioRef.current) return
-    
     if (speakingId === msgId) {
       // Stop active playback
       if (activeAudioRef.current) {

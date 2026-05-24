@@ -146,8 +146,6 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   }
 
   const speakMessageText = async (text, msgId) => {
-    if (!window.speechSynthesis && !activeAudioRef.current) return
-    
     if (speakingId === msgId) {
       // Stop active playback
       if (activeAudioRef.current) {
