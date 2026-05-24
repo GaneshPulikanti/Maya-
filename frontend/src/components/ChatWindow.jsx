@@ -43,6 +43,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   const [input, setInput] = useState('')
   const [speakingId, setSpeakingId] = useState(null)
   const activeAudioRef = useRef(null)
+  const currentSpeakRequestRef = useRef(0)
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -101,10 +102,11 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     return colors[Math.abs(hash) % colors.length]
   }
 
-  const runSpeechSynthesisFallback = (cleanText, msgId) => {
+  const runSpeechSynthesisFallback = (cleanText, msgId, requestId, done) => {
+    if (requestId && requestId !== currentSpeakRequestRef.current) return
     if (!window.speechSynthesis) {
       alert("SpeechSynthesis is not supported on this device.")
-      setSpeakingId(prev => prev === msgId ? null : prev)
+      done()
       return
     }
 
@@ -115,13 +117,16 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     utterance.volume = 1.0
 
     utterance.onend = () => {
-      setSpeakingId(prev => prev === msgId ? null : prev)
+      if (!requestId || requestId === currentSpeakRequestRef.current) {
+        done()
+      }
     }
     utterance.onerror = (e) => {
       const errorMsg = "SpeechSynthesis error: " + (e.error || e.message || "unknown")
       console.error(errorMsg, e)
-      alert(errorMsg)
-      setSpeakingId(prev => prev === msgId ? null : prev)
+      if (!requestId || requestId === currentSpeakRequestRef.current) {
+        done()
+      }
     }
 
     const voices = window.speechSynthesis.getVoices()
@@ -140,14 +145,17 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       window.speechSynthesis.speak(utterance)
     } catch (err) {
       console.error("SpeechSynthesis fallback speak failed:", err)
-      alert("SpeechSynthesis speak failed: " + err.message)
-      setSpeakingId(prev => prev === msgId ? null : prev)
+      if (!requestId || requestId === currentSpeakRequestRef.current) {
+        done()
+      }
     }
   }
 
   const speakMessageText = async (text, msgId) => {
+    const requestId = ++currentSpeakRequestRef.current
+
     if (speakingId === msgId) {
-      // Stop active playback
+      currentSpeakRequestRef.current++ // Invalidate any pending requests
       if (activeAudioRef.current) {
         try {
           activeAudioRef.current.pause()
@@ -198,15 +206,52 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
     setSpeakingId(msgId)
 
-    let orpheusWorked = false
+    let fallbackTimeout = null
+    let usingSpeechSynthesis = false
+    let finished = false
 
-    // Try backend Groq Orpheus TTS first
+    const done = () => {
+      if (finished) return
+      finished = true
+      if (fallbackTimeout) {
+        clearTimeout(fallbackTimeout)
+        fallbackTimeout = null
+      }
+      if (requestId === currentSpeakRequestRef.current) {
+        setSpeakingId(prev => prev === msgId ? null : prev)
+      }
+    }
+
+    const runFallback = () => {
+      if (finished || usingSpeechSynthesis) return
+      if (requestId !== currentSpeakRequestRef.current) return
+      usingSpeechSynthesis = true
+      if (fallbackTimeout) {
+        clearTimeout(fallbackTimeout)
+        fallbackTimeout = null
+      }
+      runSpeechSynthesisFallback(clean, msgId, requestId, done)
+    }
+
+    // Start a timeout to fallback to SpeechSynthesis in 3.0 seconds if Orpheus is slow
+    fallbackTimeout = setTimeout(() => {
+      if (!finished && !activeAudioRef.current && !usingSpeechSynthesis) {
+        console.warn("Orpheus TTS timed out (3s), falling back to SpeechSynthesis")
+        runFallback()
+      }
+    }, 3000)
+
     try {
       const response = await api.post(
         '/api/voice/speak',
         { text: clean, voice: 'diana' },
-        { responseType: 'blob', timeout: 10000 }
+        { responseType: 'blob', timeout: 7000 }
       )
+      
+      if (finished || usingSpeechSynthesis || requestId !== currentSpeakRequestRef.current) {
+        return
+      }
+
       if (response.status === 200 && response.data.size > 0) {
         // Switch to base64 Data URL to bypass Android WebView/Capacitor blob URL restrictions
         const base64Url = await new Promise((resolve, reject) => {
@@ -215,6 +260,10 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
           reader.onloadend = () => resolve(reader.result)
           reader.onerror = reject
         })
+
+        if (finished || usingSpeechSynthesis || requestId !== currentSpeakRequestRef.current) {
+          return
+        }
 
         // Create and append audio element to DOM to bypass WebView detached audio blocks
         const audio = document.createElement('audio')
@@ -237,36 +286,32 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
         audio.onended = () => {
           cleanup()
-          setSpeakingId(prev => prev === msgId ? null : prev)
+          done()
         }
 
         audio.onerror = (e) => {
-          const errorMsg = "Orpheus audio element error (falling back): " + (e.message || "decoding/playback failed")
-          console.warn(errorMsg, e)
-          alert(errorMsg)
+          console.warn("Orpheus audio element error (falling back):", e)
           cleanup()
-          runSpeechSynthesisFallback(clean, msgId)
+          runFallback()
         }
 
         try {
+          if (fallbackTimeout) {
+            clearTimeout(fallbackTimeout)
+            fallbackTimeout = null
+          }
           await audio.play()
-          orpheusWorked = true
         } catch (err) {
-          const errorMsg = "Orpheus play failed (falling back): " + err.message
-          console.error(errorMsg, err)
-          alert(errorMsg)
+          console.error("Orpheus play failed (falling back):", err)
           cleanup()
-          runSpeechSynthesisFallback(clean, msgId)
+          runFallback()
         }
+      } else {
+        runFallback()
       }
-    } catch (err) {
-      const errorMsg = "Orpheus TTS API request failed (falling back): " + (err.response?.data?.detail || err.message)
-      console.warn(errorMsg, err)
-      alert(errorMsg)
-    }
-
-    if (!orpheusWorked) {
-      runSpeechSynthesisFallback(clean, msgId)
+    } catch (error) {
+      console.warn("Orpheus TTS failed, falling back:", error)
+      runFallback()
     }
   }
 

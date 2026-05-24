@@ -33,6 +33,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
   const [speakingId, setSpeakingId] = useState(null)
   const messagesEndRef = useRef(null)
   const activeAudioRef = useRef(null)
+  const currentSpeakRequestRef = useRef(0)
 
   // Cleanup audio on unmount
   useEffect(() => {
@@ -69,9 +70,10 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     return colors[Math.abs(hash) % colors.length];
   }
 
-  const runSpeechSynthesisFallback = (cleanText, msgId) => {
+  const runSpeechSynthesisFallback = (cleanText, msgId, requestId, done) => {
+    if (requestId && requestId !== currentSpeakRequestRef.current) return
     if (!window.speechSynthesis) {
-      setSpeakingId(prev => prev === msgId ? null : prev)
+      done()
       return
     }
 
@@ -82,11 +84,15 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     utterance.volume = 1.0
 
     utterance.onend = () => {
-      setSpeakingId(prev => prev === msgId ? null : prev)
+      if (!requestId || requestId === currentSpeakRequestRef.current) {
+        done()
+      }
     }
     utterance.onerror = (e) => {
       console.error("SpeechSynthesis fallback error:", e)
-      setSpeakingId(prev => prev === msgId ? null : prev)
+      if (!requestId || requestId === currentSpeakRequestRef.current) {
+        done()
+      }
     }
 
     const voices = window.speechSynthesis.getVoices()
@@ -105,13 +111,17 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       window.speechSynthesis.speak(utterance)
     } catch (err) {
       console.error("SpeechSynthesis fallback speak failed:", err)
-      setSpeakingId(prev => prev === msgId ? null : prev)
+      if (!requestId || requestId === currentSpeakRequestRef.current) {
+        done()
+      }
     }
   }
 
   const speakMessageText = async (text, msgId) => {
+    const requestId = ++currentSpeakRequestRef.current
+
     if (speakingId === msgId) {
-      // Stop active playback
+      currentSpeakRequestRef.current++ // Invalidate any pending requests
       if (activeAudioRef.current) {
         try {
           activeAudioRef.current.pause()
@@ -162,15 +172,52 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
     setSpeakingId(msgId)
 
-    let orpheusWorked = false
+    let fallbackTimeout = null
+    let usingSpeechSynthesis = false
+    let finished = false
 
-    // Try backend Groq Orpheus TTS first
+    const done = () => {
+      if (finished) return
+      finished = true
+      if (fallbackTimeout) {
+        clearTimeout(fallbackTimeout)
+        fallbackTimeout = null
+      }
+      if (requestId === currentSpeakRequestRef.current) {
+        setSpeakingId(prev => prev === msgId ? null : prev)
+      }
+    }
+
+    const runFallback = () => {
+      if (finished || usingSpeechSynthesis) return
+      if (requestId !== currentSpeakRequestRef.current) return
+      usingSpeechSynthesis = true
+      if (fallbackTimeout) {
+        clearTimeout(fallbackTimeout)
+        fallbackTimeout = null
+      }
+      runSpeechSynthesisFallback(clean, msgId, requestId, done)
+    }
+
+    // Start a timeout to fallback to SpeechSynthesis in 3.0 seconds if Orpheus is slow
+    fallbackTimeout = setTimeout(() => {
+      if (!finished && !activeAudioRef.current && !usingSpeechSynthesis) {
+        console.warn("Orpheus TTS timed out (3s), falling back to SpeechSynthesis")
+        runFallback()
+      }
+    }, 3000)
+
     try {
       const response = await api.post(
         '/api/voice/speak',
         { text: clean, voice: 'diana' },
-        { responseType: 'blob', timeout: 10000 }
+        { responseType: 'blob', timeout: 7000 }
       )
+      
+      if (finished || usingSpeechSynthesis || requestId !== currentSpeakRequestRef.current) {
+        return
+      }
+
       if (response.status === 200 && response.data.size > 0) {
         // Switch to base64 Data URL to bypass Android WebView/Capacitor blob URL restrictions
         const base64Url = await new Promise((resolve, reject) => {
@@ -179,6 +226,10 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
           reader.onloadend = () => resolve(reader.result)
           reader.onerror = reject
         })
+
+        if (finished || usingSpeechSynthesis || requestId !== currentSpeakRequestRef.current) {
+          return
+        }
 
         // Create and append audio element to DOM to bypass WebView detached audio blocks
         const audio = document.createElement('audio')
@@ -201,24 +252,32 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
         audio.onended = () => {
           cleanup()
-          setSpeakingId(prev => prev === msgId ? null : prev)
+          done()
         }
 
         audio.onerror = (e) => {
-          console.warn("Shared message bubble Orpheus playback error, falling back to Web Speech:", e)
+          console.warn("Orpheus audio element error (falling back):", e)
           cleanup()
-          runSpeechSynthesisFallback(clean, msgId)
+          runFallback()
         }
 
-        await audio.play()
-        orpheusWorked = true
+        try {
+          if (fallbackTimeout) {
+            clearTimeout(fallbackTimeout)
+            fallbackTimeout = null
+          }
+          await audio.play()
+        } catch (err) {
+          console.error("Orpheus play failed (falling back):", err)
+          cleanup()
+          runFallback()
+        }
+      } else {
+        runFallback()
       }
-    } catch (err) {
-      console.warn("Shared message bubble Orpheus TTS failed, falling back to Web Speech:", err)
-    }
-
-    if (!orpheusWorked) {
-      runSpeechSynthesisFallback(clean, msgId)
+    } catch (error) {
+      console.warn("Orpheus TTS failed, falling back:", error)
+      runFallback()
     }
   }
 
