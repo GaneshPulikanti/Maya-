@@ -103,6 +103,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
   const runSpeechSynthesisFallback = (cleanText, msgId) => {
     if (!window.speechSynthesis) {
+      alert("SpeechSynthesis is not supported on this device.")
       setSpeakingId(prev => prev === msgId ? null : prev)
       return
     }
@@ -117,7 +118,9 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       setSpeakingId(prev => prev === msgId ? null : prev)
     }
     utterance.onerror = (e) => {
-      console.error("SpeechSynthesis fallback error:", e)
+      const errorMsg = "SpeechSynthesis error: " + (e.error || e.message || "unknown")
+      console.error(errorMsg, e)
+      alert(errorMsg)
       setSpeakingId(prev => prev === msgId ? null : prev)
     }
 
@@ -137,6 +140,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       window.speechSynthesis.speak(utterance)
     } catch (err) {
       console.error("SpeechSynthesis fallback speak failed:", err)
+      alert("SpeechSynthesis speak failed: " + err.message)
       setSpeakingId(prev => prev === msgId ? null : prev)
     }
   }
@@ -239,16 +243,28 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         }
 
         audio.onerror = (e) => {
-          console.warn("Message bubble Orpheus playback error, falling back to Web Speech:", e)
+          const errorMsg = "Orpheus audio element error (falling back): " + (e.message || "decoding/playback failed")
+          console.warn(errorMsg, e)
+          alert(errorMsg)
           cleanup()
           runSpeechSynthesisFallback(clean, msgId)
         }
 
-        await audio.play()
-        orpheusWorked = true
+        try {
+          await audio.play()
+          orpheusWorked = true
+        } catch (err) {
+          const errorMsg = "Orpheus play failed (falling back): " + err.message
+          console.error(errorMsg, err)
+          alert(errorMsg)
+          cleanup()
+          runSpeechSynthesisFallback(clean, msgId)
+        }
       }
     } catch (err) {
-      console.warn("Message bubble Orpheus TTS failed, falling back to Web Speech:", err)
+      const errorMsg = "Orpheus TTS API request failed (falling back): " + (err.response?.data?.detail || err.message)
+      console.warn(errorMsg, err)
+      alert(errorMsg)
     }
 
     if (!orpheusWorked) {
