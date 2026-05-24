@@ -580,8 +580,8 @@ export const ChatProvider = ({ children }) => {
       // Touch / refresh session listings in background to bubble active session up
       fetchSessions()
 
-      // Playback Maya's response — only when voice assistant is enabled
-      if (!streamAborted && voiceEnabled && fullAssistantText.trim()) {
+      // Playback Maya's response — only when voice assistant is enabled and NOT in voice mode
+      if (!streamAborted && voiceEnabled && !isVoice && fullAssistantText.trim()) {
         // Clean the text for speech (remove markdown, code blocks, etc.)
         const ttsText = fullAssistantText
           .replace(/```[\s\S]*?```/g, 'a code block')

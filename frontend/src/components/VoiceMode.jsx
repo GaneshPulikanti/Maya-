@@ -11,7 +11,7 @@ if (typeof window !== 'undefined' && window.Capacitor) {
   try {
     isCapacitorAvailable = true
     const { registerPlugin } = window.Capacitor
-    console.log("Capacitor available:", Capacitor)
+    console.log("Capacitor available:", window.Capacitor)
     console.log("Registering AudioRecorder plugin")
     AudioRecorder = registerPlugin('AudioRecorder')
   } catch (err) {
@@ -47,61 +47,84 @@ function speakText(rawText, onDone) {
 
   let finished = false
   let activeAudio = null
+  let utter = null
+  let fallbackTimeout = null
+  let usingSpeechSynthesis = false
 
   const done = () => {
     if (finished) return
     finished = true
+    if (fallbackTimeout) {
+      clearTimeout(fallbackTimeout)
+      fallbackTimeout = null
+    }
     onDone?.()
   }
 
-  // 1. Start Web Speech API immediately — guaranteed to work
-  let utter = null
+  const runSpeechSynthesis = () => {
+    if (finished || usingSpeechSynthesis) return
+    usingSpeechSynthesis = true
+    if (fallbackTimeout) {
+      clearTimeout(fallbackTimeout)
+      fallbackTimeout = null
+    }
 
-  if (window.speechSynthesis) {
-    window.speechSynthesis.cancel()
-    utter = new SpeechSynthesisUtterance(text)
-    utter.rate = 1.05
-    utter.pitch = 1.05
-    utter.volume = 1.0
-    utter.onend = done
-    utter.onerror = done
+    if (!window.speechSynthesis) {
+      done()
+      return
+    }
 
-    const go = () => {
-      if (!finished) {
-        const voices = window.speechSynthesis.getVoices()
-        const femaleVoice = voices.find(v =>
-          ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name =>
-            v.name.includes(name)
-          )
-        ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-        if (femaleVoice) utter.voice = femaleVoice
-        window.speechSynthesis.speak(utter)
+    try {
+      window.speechSynthesis.cancel()
+      utter = new SpeechSynthesisUtterance(text)
+      utter.rate = 1.05
+      utter.pitch = 1.05
+      utter.volume = 1.0
+      utter.onend = done
+      utter.onerror = done
+
+      const go = () => {
+        if (!finished) {
+          const voices = window.speechSynthesis.getVoices()
+          const femaleVoice = voices.find(v =>
+            ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name =>
+              v.name.includes(name)
+            )
+          ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
+          if (femaleVoice) utter.voice = femaleVoice
+          window.speechSynthesis.speak(utter)
+        }
       }
+
+      if (window.speechSynthesis.getVoices().length > 0) {
+        go()
+      } else {
+        window.speechSynthesis.addEventListener('voiceschanged', go, { once: true })
+        // force-start in case 'voiceschanged' doesn't fire (some browsers)
+        setTimeout(go, 250)
+      }
+    } catch (err) {
+      console.error("SpeechSynthesis failed:", err)
+      done()
     }
-    if (window.speechSynthesis.getVoices().length > 0) {
-      go()
-    } else {
-      window.speechSynthesis.addEventListener('voiceschanged', go, { once: true })
-      // force-start in case 'voiceschanged' doesn't fire (some browsers)
-      setTimeout(go, 250)
-    }
-  } else {
-    setTimeout(done, 100)
   }
 
-  // 2. In parallel, try Groq Orpheus — if it responds, swap to higher-quality audio
-  api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 10000 })
+  // Set a backup timeout: if Orpheus doesn't load/play within 4.5 seconds, fall back to SpeechSynthesis
+  fallbackTimeout = setTimeout(() => {
+    if (!finished && !activeAudio && !usingSpeechSynthesis) {
+      console.warn("Orpheus TTS timed out, falling back to SpeechSynthesis")
+      runSpeechSynthesis()
+    }
+  }, 4500)
+
+  // Fallback order: Web Audio (Groq Orpheus) → SpeechSynthesis
+  api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 8000 })
     .then(res => {
-      if (finished || !res?.data?.size) return
-
-      // Prevent browser speech callbacks
-      if (utter) {
-        utter.onend = null
-        utter.onerror = null
+      if (finished || usingSpeechSynthesis) return
+      if (!res?.data?.size) {
+        runSpeechSynthesis()
+        return
       }
-
-      // Stop browser speech
-      window.speechSynthesis?.cancel()
 
       try {
         const url = URL.createObjectURL(res.data)
@@ -117,38 +140,60 @@ function speakText(rawText, onDone) {
         }
 
         audio.onerror = (e) => {
-          console.log("Audio playback error", e)
+          console.error("Audio playback error, falling back to SpeechSynthesis", e)
           URL.revokeObjectURL(url)
           activeAudio = null
-          done()
+          runSpeechSynthesis()
         }
 
         audio.oncanplaythrough = async () => {
+          if (finished || usingSpeechSynthesis) {
+            URL.revokeObjectURL(url)
+            return
+          }
+          if (fallbackTimeout) {
+            clearTimeout(fallbackTimeout)
+            fallbackTimeout = null
+          }
           try {
             console.log("Trying audio playback")
             await audio.play()
             console.log("Audio playback started")
           } catch (err) {
-            console.log("Audio play failed", err)
-            done()
+            console.error("Audio play failed, falling back to SpeechSynthesis", err)
+            URL.revokeObjectURL(url)
+            activeAudio = null
+            runSpeechSynthesis()
           }
         }
       } catch (err) {
-        console.log("Audio setup failed", err)
-        done()
+        console.error("Audio setup failed, falling back to SpeechSynthesis", err)
+        runSpeechSynthesis()
       }
     })
     .catch(err => {
-      console.log("TTS request failed", err)
+      console.warn("TTS request failed, falling back to SpeechSynthesis", err)
+      runSpeechSynthesis()
     })
 
   // Return clean cancellation function
   return () => {
     finished = true
-    window.speechSynthesis?.cancel()
+    if (fallbackTimeout) {
+      clearTimeout(fallbackTimeout)
+      fallbackTimeout = null
+    }
+    if (window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel()
+      } catch { }
+    }
     if (activeAudio) {
       try {
         activeAudio.pause()
+        activeAudio.currentTime = 0
+        activeAudio.src = ''
+        activeAudio.load()
       } catch { }
       activeAudio = null
     }
@@ -204,7 +249,7 @@ export default function VoiceMode({ isOpen, onClose }) {
   const speakCancelRef = useRef(null)
   const abortRecRef = useRef(false) // Track intentional aborts
   const isOpenRef = useRef(isOpen)
-  const isAndroidRef = useRef(typeof window !== 'undefined' && /android/i.test(navigator.userAgent))
+  const isAndroidRef = useRef(typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android')))
   const recordingMethodRef = useRef('mediarecorder')
 
   useEffect(() => {
@@ -275,6 +320,15 @@ export default function VoiceMode({ isOpen, onClose }) {
       try { speakCancelRef.current() } catch { }
       speakCancelRef.current = null
     }
+    if (recordingMethodRef.current === 'capacitor' && AudioRecorder) {
+      try {
+        AudioRecorder.stopRecording().catch(err => {
+          console.warn('Failed to stop Capacitor recorder on cleanup:', err)
+        })
+      } catch (err) {
+        console.warn('Failed to stop Capacitor recorder on cleanup:', err)
+      }
+    }
     if (mediaRecRef.current?.state === 'recording') {
       try { mediaRecRef.current.stop() } catch { }
     }
@@ -311,8 +365,15 @@ export default function VoiceMode({ isOpen, onClose }) {
       streamRef.current = stream
 
       let opts = {}
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) opts = { mimeType: 'audio/webm;codecs=opus' }
-      else if (MediaRecorder.isTypeSupported('audio/webm')) opts = { mimeType: 'audio/webm' }
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        opts = { mimeType: 'audio/webm;codecs=opus' }
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        opts = { mimeType: 'audio/webm' }
+      } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+        opts = { mimeType: 'audio/ogg;codecs=opus' }
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        opts = { mimeType: 'audio/mp4' }
+      }
 
       const rec = new MediaRecorder(stream, opts)
       mediaRecRef.current = rec
@@ -385,8 +446,24 @@ export default function VoiceMode({ isOpen, onClose }) {
       return
     }
 
+    // Determine the exact correct file extension based on the actual recorded mime type
+    let extension = 'wav'
+    if (blob.type) {
+      if (blob.type.includes('webm')) {
+        extension = 'webm'
+      } else if (blob.type.includes('mp4') || blob.type.includes('m4a') || blob.type.includes('aac')) {
+        extension = 'm4a'
+      } else if (blob.type.includes('ogg')) {
+        extension = 'ogg'
+      } else if (blob.type.includes('wav')) {
+        extension = 'wav'
+      } else if (blob.type.includes('mpeg')) {
+        extension = 'mp3'
+      }
+    }
+
     const fd = new FormData()
-    fd.append('file', blob, `voice.wav`)
+    fd.append('file', blob, `voice.${extension}`)
 
     try {
       const res = await api.post('/api/voice/transcribe', fd, {
@@ -433,6 +510,7 @@ export default function VoiceMode({ isOpen, onClose }) {
     if (phaseRef.current === PHASE.IDLE) {
       startRec()
     } else if (phaseRef.current === PHASE.LISTENING) {
+      setPhaseSync(PHASE.PROCESSING) // set to processing immediately to avoid double clicks/taps
       stopRec()
     } else if (phaseRef.current === PHASE.SPEAKING) {
       // CHATGPT INTERRUPT MODE: If clicked while speaking, immediately stop speaking and start listening to user's new turn!

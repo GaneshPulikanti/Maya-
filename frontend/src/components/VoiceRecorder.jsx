@@ -50,7 +50,6 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
       try {
         console.log("Using native Capacitor recorder")
         await AudioRecorder.startRecording()
-        recordingMethodRef.current = 'capacitor'
         setRecordingMethod('capacitor')
         setIsRecording(true)
 
@@ -67,7 +66,7 @@ export default function VoiceRecorder({ onTranscriptionComplete, disabled }) {
 
     // Fallback to MediaRecorder API (works on web and some Android WebViews)
     try {
-      //const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
 
       // Determine supported mime type
       let options = {}
