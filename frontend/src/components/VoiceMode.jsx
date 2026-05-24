@@ -2,8 +2,6 @@ import React, { useState, useRef, useEffect } from 'react'
 import { X, Loader2, Heart, AlertCircle } from 'lucide-react'
 import { api } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
-import { Filesystem, Directory } from '@capacitor/filesystem'
-import { Media } from '@capacitor-community/media'
 
 // ─── Capacitor Audio Plugin (Android native recording fallback) ──────────────
 let AudioRecorder = null
@@ -49,22 +47,11 @@ function speakText(rawText, onDone) {
 
   let finished = false
   let activeAudio = null
-  let nativePlaying = false
 
-  const done = async () => {
-    if (!finished) return
+  const done = () => {
+    if (finished) return
     finished = true
-
-    if (nativePlaying) {
-      try {
-        await Media.stop()
-      } catch { }
-
-      nativePlaying = false
-    }
-
     onDone?.()
-
   }
 
   // 1. Start Web Speech API immediately — guaranteed to work
@@ -102,7 +89,6 @@ function speakText(rawText, onDone) {
     setTimeout(done, 100)
   }
 
-
   // 2. In parallel, try Groq Orpheus — if it responds, swap to higher-quality audio
   api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 10000 })
     .then(res => {
@@ -117,106 +103,54 @@ function speakText(rawText, onDone) {
       // Stop browser speech
       window.speechSynthesis?.cancel()
 
-      // ANDROID NATIVE AUDIO PLAYBACK
-      const reader = new FileReader()
+      try {
+        const url = URL.createObjectURL(res.data)
+        const audio = new Audio(url)
+        audio.setAttribute("playsinline", "true")
+        audio.volume = 1.0
+        activeAudio = audio
 
-      reader.onloadend = async () => {
-        try {
-          const base64Data = reader.result.split(',')[1]
+        audio.onended = () => {
+          URL.revokeObjectURL(url)
+          activeAudio = null
+          done()
+        }
 
-          const fileName = `maya_voice_${Date.now()}.mp3`
+        audio.onerror = (e) => {
+          console.log("Audio playback error", e)
+          URL.revokeObjectURL(url)
+          activeAudio = null
+          done()
+        }
 
-          // Save audio natively
-          const savedFile = await Filesystem.writeFile({
-            path: fileName,
-            data: base64Data,
-            directory: Directory.Cache
-          })
-
-          console.log("Saved audio:", savedFile.uri)
-
-          // PLAY USING NATIVE MEDIA PLAYER
-          await Media.play({
-            path: savedFile.uri
-          })
-          nativePlaying = true
-          console.log("Native playback started")
-
-          // Estimate duration and continue loop
-          const tempUrl = URL.createObjectURL(res.data)
-
-          const tempAudio = new Audio()
-          tempAudio.src = tempUrl
-
-          tempAudio.onloadedmetadata = () => {
-            URL.revokeObjectURL(tempUrl)
-            setTimeout(() => {
-              done()
-            }, (tempAudio.duration * 1000) + 500)
-          }
-
-        } catch (err) {
-          console.log("Native playback failed", err)
-
-          // FALLBACK TO NORMAL AUDIO
+        audio.oncanplaythrough = async () => {
           try {
-            const url = URL.createObjectURL(res.data)
-
-            const audio = new Audio(url)
-
-            activeAudio = audio
-
-            audio.onended = () => {
-              URL.revokeObjectURL(url)
-              activeAudio = null
-              done()
-            }
-
-            audio.onerror = () => {
-              URL.revokeObjectURL(url)
-              activeAudio = null
-              done()
-            }
-
+            console.log("Trying audio playback")
             await audio.play()
-
-          } catch (fallbackErr) {
-            console.log("Fallback playback failed", fallbackErr)
+            console.log("Audio playback started")
+          } catch (err) {
+            console.log("Audio play failed", err)
             done()
           }
         }
+      } catch (err) {
+        console.log("Audio setup failed", err)
+        done()
       }
-
-      reader.readAsDataURL(res.data)
     })
     .catch(err => {
       console.log("TTS request failed", err)
     })
 
   // Return clean cancellation function
-  // Return clean cancellation function
-  return async () => {
+  return () => {
     finished = true
-
-    // Stop browser speech
     window.speechSynthesis?.cancel()
-
-    // Stop HTML audio fallback
     if (activeAudio) {
       try {
         activeAudio.pause()
       } catch { }
-
       activeAudio = null
-    }
-
-    // Stop native Android audio
-    if (nativePlaying) {
-      try {
-        await Media.stop()
-      } catch { }
-
-      nativePlaying = false
     }
   }
 }

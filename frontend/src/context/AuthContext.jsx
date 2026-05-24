@@ -6,7 +6,7 @@ const AuthContext = createContext(null)
 // Create a configured Axios instance
 // In production, VITE_API_URL should be set to your backend domain (e.g., https://your-backend.onrender.com)
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '', // Falls back to relative path (Vite proxy) in local dev
+  baseURL: import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform() ? 'http://10.0.2.2:8000' : ''), // Falls back to relative path in web, emulator host in Android
 })
 
 export const AuthProvider = ({ children }) => {

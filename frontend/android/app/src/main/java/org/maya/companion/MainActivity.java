@@ -1,15 +1,20 @@
+package org.maya.companion;
+
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.media.AudioManager;
+import android.os.Bundle;
+
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+import com.getcapacitor.BridgeActivity;
+
 public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-
         super.onCreate(savedInstanceState);
-
-        AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
-
-        if (audioManager != null) {
-            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-        }
 
         // mic permission
         if (ContextCompat.checkSelfPermission(
@@ -25,33 +30,19 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onStart() {
-
         super.onStart();
 
         if (this.bridge != null && this.bridge.getWebView() != null) {
+            // Allow media playback without user gesture
+            this.bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
 
             this.bridge.getWebView().setWebChromeClient(
                     new com.getcapacitor.BridgeWebChromeClient(this.bridge) {
-
                         @Override
-                        public void onPermissionRequest(
-                                final android.webkit.PermissionRequest request) {
-
+                        public void onPermissionRequest(final android.webkit.PermissionRequest request) {
                             request.grant(request.getResources());
                         }
                     });
-        }
-    }
-
-    @Override
-    protected void onResume() {
-
-        super.onResume();
-
-        AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
-
-        if (audioManager != null) {
-            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
         }
     }
 }
