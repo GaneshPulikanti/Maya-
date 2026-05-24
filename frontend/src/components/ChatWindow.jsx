@@ -42,28 +42,23 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
   const [input, setInput] = useState('')
   const [speakingId, setSpeakingId] = useState(null)
-  const activeAudioRef = useRef(null)
   const currentSpeakRequestRef = useRef(0)
-
+ 
   // Cleanup audio on unmount
   useEffect(() => {
     return () => {
-      if (activeAudioRef.current) {
+      if (window._activeSpeechAudio) {
         try {
-          activeAudioRef.current.pause()
-          if (document.body.contains(activeAudioRef.current)) {
-            document.body.removeChild(activeAudioRef.current)
+          window._activeSpeechAudio.pause()
+          if (document.body.contains(window._activeSpeechAudio)) {
+            document.body.removeChild(window._activeSpeechAudio)
           }
         } catch (e) {}
-      }
-      if (window.speechSynthesis) {
-        try {
-          window.speechSynthesis.cancel()
-        } catch (e) {}
+        window._activeSpeechAudio = null
       }
     }
   }, [])
-
+ 
   // Unlock audio context on WebView/mobile platforms
   const unlockAudio = () => {
     if (window._audioUnlocked) return
@@ -85,7 +80,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       console.warn("Audio unlock error:", e)
     }
   }
-
+ 
   const getAvatarColor = (name) => {
     const colors = [
       'bg-rose-600 text-rose-50',
@@ -101,34 +96,34 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     }
     return colors[Math.abs(hash) % colors.length]
   }
-
+ 
   const speakMessageText = async (text, msgId) => {
     const requestId = ++currentSpeakRequestRef.current
-
+ 
     if (speakingId === msgId) {
       currentSpeakRequestRef.current++ // Invalidate any pending requests
-      if (activeAudioRef.current) {
+      if (window._activeSpeechAudio) {
         try {
-          activeAudioRef.current.pause()
-          if (document.body.contains(activeAudioRef.current)) {
-            document.body.removeChild(activeAudioRef.current)
+          window._activeSpeechAudio.pause()
+          if (document.body.contains(window._activeSpeechAudio)) {
+            document.body.removeChild(window._activeSpeechAudio)
           }
         } catch (e) {}
-        activeAudioRef.current = null
+        window._activeSpeechAudio = null
       }
       setSpeakingId(null)
       return
     }
-
+ 
     // Stop any currently playing audio first
-    if (activeAudioRef.current) {
+    if (window._activeSpeechAudio) {
       try {
-        activeAudioRef.current.pause()
-        if (document.body.contains(activeAudioRef.current)) {
-          document.body.removeChild(activeAudioRef.current)
+        window._activeSpeechAudio.pause()
+        if (document.body.contains(window._activeSpeechAudio)) {
+          document.body.removeChild(window._activeSpeechAudio)
         }
       } catch (e) {}
-      activeAudioRef.current = null
+      window._activeSpeechAudio = null
     }
     
     // Clean markdown and formatting
@@ -142,13 +137,13 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       .replace(/👥|❤️|✨|😊|💕|🌸|👋/g, '') // remove emojis
       .trim()
       .slice(0, 400)
-
+ 
     if (!clean) return
-
+ 
     setSpeakingId(msgId)
-
+ 
     let finished = false
-
+ 
     const done = () => {
       if (finished) return
       finished = true
@@ -156,7 +151,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         setSpeakingId(prev => prev === msgId ? null : prev)
       }
     }
-
+ 
     try {
       const response = await api.post(
         '/api/voice/speak',
@@ -167,7 +162,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       if (finished || requestId !== currentSpeakRequestRef.current) {
         return
       }
-
+ 
       if (response.status === 200 && response.data.size > 0) {
         // Switch to base64 Data URL to bypass Android WebView/Capacitor blob URL restrictions
         const base64Url = await new Promise((resolve, reject) => {
@@ -176,41 +171,41 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
           reader.onloadend = () => resolve(reader.result)
           reader.onerror = reject
         })
-
+ 
         if (finished || requestId !== currentSpeakRequestRef.current) {
           return
         }
-
+ 
         // Create and append audio element to DOM to bypass WebView detached audio blocks
         const audio = document.createElement('audio')
         audio.style.display = 'none'
         audio.src = base64Url
         audio.setAttribute("playsinline", "true")
         document.body.appendChild(audio)
-        activeAudioRef.current = audio
-
+        window._activeSpeechAudio = audio
+ 
         const cleanup = () => {
           try {
             if (document.body.contains(audio)) {
               document.body.removeChild(audio)
             }
           } catch (e) {}
-          if (activeAudioRef.current === audio) {
-            activeAudioRef.current = null
+          if (window._activeSpeechAudio === audio) {
+            window._activeSpeechAudio = null
           }
         }
-
+ 
         audio.onended = () => {
           cleanup()
           done()
         }
-
+ 
         audio.onerror = (e) => {
           console.warn("Orpheus audio element error:", e)
           cleanup()
           done()
         }
-
+ 
         try {
           await audio.play()
         } catch (err) {
