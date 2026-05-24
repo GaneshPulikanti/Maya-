@@ -102,55 +102,6 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     return colors[Math.abs(hash) % colors.length]
   }
 
-  const runSpeechSynthesisFallback = (cleanText, msgId, requestId, done) => {
-    if (requestId && requestId !== currentSpeakRequestRef.current) return
-    if (!window.speechSynthesis) {
-      alert("SpeechSynthesis is not supported on this device.")
-      done()
-      return
-    }
-
-    const utterance = new SpeechSynthesisUtterance(cleanText)
-    utterance.lang = 'en-US'
-    utterance.rate = 1.0
-    utterance.pitch = 1.05
-    utterance.volume = 1.0
-
-    utterance.onend = () => {
-      if (!requestId || requestId === currentSpeakRequestRef.current) {
-        done()
-      }
-    }
-    utterance.onerror = (e) => {
-      const errorMsg = "SpeechSynthesis error: " + (e.error || e.message || "unknown")
-      console.error(errorMsg, e)
-      if (!requestId || requestId === currentSpeakRequestRef.current) {
-        done()
-      }
-    }
-
-    const voices = window.speechSynthesis.getVoices()
-    const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
-    
-    if (!isAndroid) {
-      const femaleVoice = voices.find(v => 
-        ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-          v.name.includes(name)
-        )
-      ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-      if (femaleVoice) utterance.voice = femaleVoice
-    }
-
-    try {
-      window.speechSynthesis.speak(utterance)
-    } catch (err) {
-      console.error("SpeechSynthesis fallback speak failed:", err)
-      if (!requestId || requestId === currentSpeakRequestRef.current) {
-        done()
-      }
-    }
-  }
-
   const speakMessageText = async (text, msgId) => {
     const requestId = ++currentSpeakRequestRef.current
 
@@ -165,16 +116,11 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         } catch (e) {}
         activeAudioRef.current = null
       }
-      if (window.speechSynthesis) {
-        try {
-          window.speechSynthesis.cancel()
-        } catch (e) {}
-      }
       setSpeakingId(null)
       return
     }
 
-    // Stop any currently playing audio/speech first
+    // Stop any currently playing audio first
     if (activeAudioRef.current) {
       try {
         activeAudioRef.current.pause()
@@ -183,11 +129,6 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         }
       } catch (e) {}
       activeAudioRef.current = null
-    }
-    if (window.speechSynthesis) {
-      try {
-        window.speechSynthesis.cancel()
-      } catch (e) {}
     }
     
     // Clean markdown and formatting
@@ -206,49 +147,24 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
     setSpeakingId(msgId)
 
-    let fallbackTimeout = null
-    let usingSpeechSynthesis = false
     let finished = false
 
     const done = () => {
       if (finished) return
       finished = true
-      if (fallbackTimeout) {
-        clearTimeout(fallbackTimeout)
-        fallbackTimeout = null
-      }
       if (requestId === currentSpeakRequestRef.current) {
         setSpeakingId(prev => prev === msgId ? null : prev)
       }
     }
 
-    const runFallback = () => {
-      if (finished || usingSpeechSynthesis) return
-      if (requestId !== currentSpeakRequestRef.current) return
-      usingSpeechSynthesis = true
-      if (fallbackTimeout) {
-        clearTimeout(fallbackTimeout)
-        fallbackTimeout = null
-      }
-      runSpeechSynthesisFallback(clean, msgId, requestId, done)
-    }
-
-    // Start a timeout to fallback to SpeechSynthesis in 3.0 seconds if Orpheus is slow
-    fallbackTimeout = setTimeout(() => {
-      if (!finished && !activeAudioRef.current && !usingSpeechSynthesis) {
-        console.warn("Orpheus TTS timed out (3s), falling back to SpeechSynthesis")
-        runFallback()
-      }
-    }, 3000)
-
     try {
       const response = await api.post(
         '/api/voice/speak',
         { text: clean, voice: 'diana' },
-        { responseType: 'blob', timeout: 7000 }
+        { responseType: 'blob', timeout: 15000 }
       )
       
-      if (finished || usingSpeechSynthesis || requestId !== currentSpeakRequestRef.current) {
+      if (finished || requestId !== currentSpeakRequestRef.current) {
         return
       }
 
@@ -261,7 +177,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
           reader.onerror = reject
         })
 
-        if (finished || usingSpeechSynthesis || requestId !== currentSpeakRequestRef.current) {
+        if (finished || requestId !== currentSpeakRequestRef.current) {
           return
         }
 
@@ -290,28 +206,24 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         }
 
         audio.onerror = (e) => {
-          console.warn("Orpheus audio element error (falling back):", e)
+          console.warn("Orpheus audio element error:", e)
           cleanup()
-          runFallback()
+          done()
         }
 
         try {
-          if (fallbackTimeout) {
-            clearTimeout(fallbackTimeout)
-            fallbackTimeout = null
-          }
           await audio.play()
         } catch (err) {
-          console.error("Orpheus play failed (falling back):", err)
+          console.error("Orpheus play failed:", err)
           cleanup()
-          runFallback()
+          done()
         }
       } else {
-        runFallback()
+        done()
       }
     } catch (error) {
-      console.warn("Orpheus TTS failed, falling back:", error)
-      runFallback()
+      console.warn("Orpheus TTS failed:", error)
+      done()
     }
   }
 
