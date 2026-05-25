@@ -18,6 +18,56 @@ const VocalIcon = ({ isMoving = false, className = "w-5 h-5 text-wine-900" }) =>
   )
 }
 
+const TypewriterWrapper = ({ messageId, fullText, onComplete, onType, children }) => {
+  const [typedText, setTypedText] = useState("");
+  const fullTextRef = useRef(fullText);
+  const typedTextRef = useRef("");
+
+  useEffect(() => {
+    fullTextRef.current = fullText;
+  }, [fullText]);
+
+  useEffect(() => {
+    if (!fullText.startsWith(typedTextRef.current)) {
+      setTypedText("");
+      typedTextRef.current = "";
+    }
+
+    let timer;
+    const typeNext = () => {
+      const currentFull = fullTextRef.current;
+      const currentTyped = typedTextRef.current;
+
+      if (currentTyped.length < currentFull.length) {
+        const remaining = currentFull.slice(currentTyped.length);
+        const spaceMatch = remaining.match(/^(\s*\S+)/);
+        const chunk = spaceMatch ? spaceMatch[1] : remaining;
+
+        const nextTyped = currentTyped + chunk;
+        setTypedText(nextTyped);
+        typedTextRef.current = nextTyped;
+        if (onType) onType();
+
+        const remainingChars = currentFull.length - nextTyped.length;
+        const delay = remainingChars > 100 ? 5 : 30;
+        timer = setTimeout(typeNext, delay);
+      } else {
+        onComplete();
+      }
+    };
+
+    if (typedTextRef.current.length < fullText.length) {
+      timer = setTimeout(typeNext, 30);
+    } else {
+      onComplete();
+    }
+
+    return () => clearTimeout(timer);
+  }, [fullText, messageId]);
+
+  return children(typedText);
+};
+
 export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   const {
     activeSessionId,
@@ -1100,42 +1150,6 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     return { hasReply: false, cleanContent: content, prefix: "" }
   }
 
-  const TypewriterText = ({ text, onComplete }) => {
-    const [displayedText, setDisplayedText] = useState("")
-
-    useEffect(() => {
-      const words = text.split(" ")
-      let currentText = ""
-      let wordIdx = 0
-
-      const intervalId = setInterval(() => {
-        if (wordIdx < words.length) {
-          currentText += (wordIdx === 0 ? "" : " ") + words[wordIdx]
-          setDisplayedText(currentText)
-          wordIdx++
-          if (isAutoScrollingRef.current) {
-            scrollToBottom('smooth')
-          }
-        } else {
-          clearInterval(intervalId)
-          if (typeof onComplete === 'function') {
-            onComplete()
-          }
-        }
-      }, 30)
-
-      return () => {
-        clearInterval(intervalId)
-      }
-    }, [text])
-
-    return (
-      <>
-        {renderMessageText(displayedText)}
-      </>
-    )
-  }
-
   // Split rendering for Assistant response containing blocks
   const renderAssistantMessage = (msg) => {
     if (!msg.content) {
@@ -1149,13 +1163,6 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         </div>
       )
     }
-
-    const isMsgNew = msg.role === 'assistant' && 
-                     !msg.isLocal && 
-                     msg.id &&
-                     !msg.id.toString().startsWith('vhist-') &&
-                     !typedMessageIdsRef.current.has(msg.id) && 
-                     (new Date() - new Date(msg.created_at) < 15000)
 
     const replyData = renderReplyQuote(msg.content)
     const blocks = parseAIResponse(replyData.cleanContent)
@@ -1172,18 +1179,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
                 key={idx}
                 className="px-4 py-3 rounded-2xl rounded-tl-none text-base leading-relaxed font-sans bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 shadow-md shadow-rose-500/5 w-full"
               >
-                {isMsgNew ? (
-                  <TypewriterText 
-                    text={block.content} 
-                    onComplete={() => {
-                      if (msg.id) {
-                        typedMessageIdsRef.current.add(msg.id)
-                      }
-                    }} 
-                  />
-                ) : (
-                  renderMessageText(block.content)
-                )}
+                {renderMessageText(block.content)}
               </div>
             )
           } else if (block.type === 'code') {
@@ -1546,7 +1542,28 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
                 >
                   {/* Bubble Content Wrapper */}
                   <div className="w-full">
-                    {isUser ? renderUserMessage(msg) : renderAssistantMessage(msg)}
+                    {(() => {
+                      const isMsgNew = !isUser && msg.role === 'assistant' && !msg.isLocal && msg.id && !msg.id.toString().startsWith('vhist-') && !typedMessageIdsRef.current.has(msg.id) && (new Date() - new Date(msg.created_at) < 15000);
+                      if (isMsgNew) {
+                        return (
+                          <TypewriterWrapper
+                            messageId={msg.id}
+                            fullText={msg.content}
+                            onComplete={() => {
+                              typedMessageIdsRef.current.add(msg.id)
+                            }}
+                            onType={() => {
+                              if (isAutoScrollingRef.current) {
+                                scrollToBottom('smooth')
+                              }
+                            }}
+                          >
+                            {(typedContent) => renderAssistantMessage({ ...msg, content: typedContent })}
+                          </TypewriterWrapper>
+                        )
+                      }
+                      return isUser ? renderUserMessage(msg) : renderAssistantMessage(msg);
+                    })()}
                   </div>
                   
                   <span className={`text-[10px] text-butter-300 font-light mt-1.5 font-sans flex items-center gap-1.5 select-none w-full ${isUser ? 'justify-end pr-1' : 'justify-start pl-1'}`}>

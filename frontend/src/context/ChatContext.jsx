@@ -213,8 +213,12 @@ export const ChatProvider = ({ children }) => {
           return serverMsgs.map((serverMsg, idx) => {
             const prevMsg = prevMsgs[idx];
             // If the message occupies the same index and has the same role, it's structurally the same message
-            if (prevMsg && prevMsg.role === serverMsg.role && prevMsg.client_id) {
-              return { ...serverMsg, client_id: prevMsg.client_id };
+            if (prevMsg && prevMsg.role === serverMsg.role && (prevMsg.client_id || prevMsg.isLocal)) {
+              return { 
+                ...serverMsg, 
+                client_id: prevMsg.client_id || serverMsg.client_id,
+                isLocal: prevMsg.isLocal || serverMsg.isLocal
+              };
             }
             return serverMsg;
           });
@@ -487,11 +491,21 @@ export const ChatProvider = ({ children }) => {
   const sendMessage = async (content, isVoice = false) => {
     if (!activeSessionId || !content.trim() || isStreaming) return
 
+    const activeSession = sessions.find(s => s.id === activeSessionId)
+    const isGroupChat = activeSession?.title?.toLowerCase().includes("group")
+    let finalContent = content.trim()
+    if (isGroupChat && user?.email) {
+      const name = user.email.split('@')[0]
+      if (!finalContent.startsWith(`[${name}]:`) && !/^\[.*?\]:\s*/.test(finalContent)) {
+        finalContent = `[${name}]: ${finalContent}`
+      }
+    }
+
     const userMessage = {
       id: `local-usr-${Date.now()}`,
       client_id: `local-usr-${Date.now()}`,
       role: 'user',
-      content: content.trim(),
+      content: finalContent,
       created_at: new Date().toISOString(),
       isLocal: true
     }
@@ -556,7 +570,7 @@ export const ChatProvider = ({ children }) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ content: content.trim(), is_voice: isVoice }),
+        body: JSON.stringify({ content: finalContent, is_voice: isVoice }),
         signal: abortController.signal
       })
 
@@ -654,6 +668,7 @@ export const ChatProvider = ({ children }) => {
       }
       setStreamingMessage(null)
       setIsStreaming(false)
+      fetchMessages(currentSessionId, true)
 
       // Touch / refresh session listings in background to bubble active session up
       fetchSessions()
@@ -938,6 +953,7 @@ export const ChatProvider = ({ children }) => {
 
       setStreamingMessage(null)
       setIsStreaming(false)
+      fetchMessages(activeSessionId, true)
       fetchSessions()
     } catch (err) {
       if (err.name !== 'AbortError') {
