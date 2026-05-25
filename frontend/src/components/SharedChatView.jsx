@@ -13,6 +13,43 @@ const api = axios.create({
   }
 })
 
+const TypewriterText = ({ text, isNew }) => {
+  const [displayedText, setDisplayedText] = useState(isNew ? "" : text)
+
+  useEffect(() => {
+    if (!isNew) {
+      setDisplayedText(text)
+      return
+    }
+
+    const words = text.split(" ")
+    let currentText = ""
+    let wordIdx = 0
+
+    const intervalId = setInterval(() => {
+      if (wordIdx < words.length) {
+        currentText += (wordIdx === 0 ? "" : " ") + words[wordIdx]
+        setDisplayedText(currentText)
+        wordIdx++
+      } else {
+        clearInterval(intervalId)
+      }
+    }, 45)
+
+    return () => clearInterval(intervalId)
+  }, [text, isNew])
+
+  return (
+    <>
+      {displayedText.split('\n').map((line, idx) => (
+        <span key={idx} className="block min-h-[1rem]">
+          {line}
+        </span>
+      ))}
+    </>
+  )
+}
+
 export default function SharedChatView({ sessionId, onBackToApp }) {
   const { user } = useAuth()
   const isGroupChat = window.location.pathname.startsWith('/group')
@@ -34,6 +71,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
   const activeAudioRef = useRef(null)
   const messagesEndRef = useRef(null)
+  const typedMessageIdsRef = useRef(new Set())
 
   const sortedMessages = useMemo(() => {
     return [...(session?.messages || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
@@ -341,6 +379,16 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
 
   const renderMessage = (msg) => {
+    const isMsgNew = msg.role === 'assistant' && 
+                     !msg.isLocal && 
+                     !msg._isVersionHistory && 
+                     !typedMessageIdsRef.current.has(msg.id) && 
+                     (new Date() - new Date(msg.created_at) < 15000)
+
+    if (msg.id) {
+      typedMessageIdsRef.current.add(msg.id)
+    }
+
     if (msg.role === 'assistant' && !msg.content) {
       return (
         <div key={msg.id} className="flex flex-col self-start items-start w-full">
@@ -413,7 +461,11 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             <div className={`text-[10px] font-bold uppercase tracking-wider mb-1 select-none ${isUser ? 'text-rose-300' : 'text-rose-400'}`}>
               {displayName}
             </div>
-            {formatText(cleanContent)}
+            {isMsgNew ? (
+              <TypewriterText text={cleanContent} isNew={true} />
+            ) : (
+              formatText(cleanContent)
+            )}
 
             {hasVersions && (
               <div className="flex items-center gap-0.5 mt-2 select-none justify-end">

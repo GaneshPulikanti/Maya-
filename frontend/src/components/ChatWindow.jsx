@@ -18,6 +18,43 @@ const VocalIcon = ({ isMoving = false, className = "w-5 h-5 text-wine-900" }) =>
   )
 }
 
+const TypewriterText = ({ text, isNew }) => {
+  const [displayedText, setDisplayedText] = useState(isNew ? "" : text)
+
+  useEffect(() => {
+    if (!isNew) {
+      setDisplayedText(text)
+      return
+    }
+
+    const words = text.split(" ")
+    let currentText = ""
+    let wordIdx = 0
+
+    const intervalId = setInterval(() => {
+      if (wordIdx < words.length) {
+        currentText += (wordIdx === 0 ? "" : " ") + words[wordIdx]
+        setDisplayedText(currentText)
+        wordIdx++
+      } else {
+        clearInterval(intervalId)
+      }
+    }, 45)
+
+    return () => clearInterval(intervalId)
+  }, [text, isNew])
+
+  return (
+    <>
+      {displayedText.split('\n').map((line, idx) => (
+        <span key={idx} className="block min-h-[1rem]">
+          {line}
+        </span>
+      ))}
+    </>
+  )
+}
+
 export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   const {
     activeSessionId,
@@ -42,6 +79,8 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
   const [input, setInput] = useState('')
   const [speakingId, setSpeakingId] = useState(null)
+  const [shareIsGroup, setShareIsGroup] = useState(false)
+  const typedMessageIdsRef = useRef(new Set())
 
   // Unlock audio context on WebView/mobile platforms
   const unlockAudio = () => {
@@ -1111,6 +1150,15 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     const replyData = renderReplyQuote(msg.content)
     const blocks = parseAIResponse(replyData.cleanContent)
 
+    const isMsgNew = msg.role === 'assistant' && 
+                     !msg.isLocal && 
+                     !typedMessageIdsRef.current.has(msg.id) && 
+                     (new Date() - new Date(msg.created_at) < 15000)
+    
+    if (msg.id) {
+      typedMessageIdsRef.current.add(msg.id)
+    }
+
     return (
       <div className="flex flex-col gap-2 w-full">
         {replyData.hasReply && replyData.replyUi}
@@ -1123,7 +1171,11 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
                 key={idx}
                 className="px-4 py-3 rounded-2xl rounded-tl-none text-base leading-relaxed font-sans bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 shadow-md shadow-rose-500/5 w-full"
               >
-                {renderMessageText(block.content)}
+                {isMsgNew ? (
+                  <TypewriterText text={block.content} isNew={true} />
+                ) : (
+                  renderMessageText(block.content)
+                )}
               </div>
             )
           } else if (block.type === 'code') {
@@ -1372,7 +1424,10 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
           {/* Share Active Chat Button */}
           {activeSessionId && (
             <button
-              onClick={() => setShareOpen(true)}
+              onClick={() => {
+                setShareIsGroup(false)
+                setShareOpen(true)
+              }}
               className="text-wine-900 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-all duration-300 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider font-sans border border-transparent"
               title="Share this active conversation"
             >
@@ -1386,6 +1441,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
             onClick={async () => {
               try {
                 await createSession("Group Chat Room")
+                setShareIsGroup(true)
                 setShareOpen(true)
               } catch (e) {
                 alert("Failed to start group chat: " + e.message)
@@ -1795,6 +1851,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         onClose={() => setShareOpen(false)}
         sessionId={activeSessionId}
         sessionTitle={sessions.find(s => s.id === activeSessionId)?.title || "New Conversation"}
+        isGroupContext={shareIsGroup}
       />
 
     </div>

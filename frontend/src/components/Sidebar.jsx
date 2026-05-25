@@ -448,6 +448,7 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
         onClose={() => setShareSession(null)}
         sessionId={shareSession?.id}
         sessionTitle={shareSession?.title}
+        isGroupContext={false}
       />
     </>
   )
