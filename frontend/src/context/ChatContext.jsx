@@ -29,6 +29,8 @@ export const ChatProvider = ({ children }) => {
   const prefetchingRef = useRef(new Set())
   const isInitializingRef = useRef(false)
   const contextAudioRef = useRef(null)
+  // Suppresses message-clear when we promote a 'new' virtual session to a real one mid-stream
+  const suppressClearOnSessionChangeRef = useRef(false)
 
   // Voice assistant enabled state — persisted to localStorage
   const [voiceEnabled, setVoiceEnabled] = useState(() => {
@@ -268,10 +270,14 @@ export const ChatProvider = ({ children }) => {
   // Reload history whenever active session changes
   useEffect(() => {
     if (activeSessionId) {
-      if (!isStreamingRef.current) {
-        setMessages([]) // Instantly clear messages to prevent leaking/flashing previous conversation
-        fetchMessages(activeSessionId)
+      // Never wipe messages while a stream is in flight (guards both the 'new'→realId
+      // transition during the first send AND any mid-stream session switches).
+      if (suppressClearOnSessionChangeRef.current || isStreamingRef.current) {
+        suppressClearOnSessionChangeRef.current = false
+        return
       }
+      setMessages([]) // Instantly clear messages to prevent leaking/flashing previous conversation
+      fetchMessages(activeSessionId)
     } else {
       setMessages([])
     }
@@ -548,6 +554,9 @@ export const ChatProvider = ({ children }) => {
         const newSession = response.data
         setSessions(prev => [newSession, ...prev])
         currentSessionId = newSession.id
+        // Raise the suppress flag BEFORE calling setActiveSessionId so the useEffect
+        // that fires on the ID change sees it and skips clearing messages.
+        suppressClearOnSessionChangeRef.current = true
         setActiveSessionId(currentSessionId, true)
       } catch (error) {
         console.error("Failed to create session for first message:", error)
