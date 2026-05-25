@@ -517,6 +517,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   }, [activeSessionId])
 
   const prevMessagesLengthRef = useRef(0)
+  const typedMessageIdsRef = useRef(new Set())
 
   // Sync scroll to bottom when messages load or streaming updates
   useEffect(() => {
@@ -1094,6 +1095,39 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     return { hasReply: false, cleanContent: content, prefix: "" }
   }
 
+  const TypewriterText = ({ text, onComplete }) => {
+    const [displayedText, setDisplayedText] = useState("")
+
+    useEffect(() => {
+      const words = text.split(" ")
+      let currentText = ""
+      let wordIdx = 0
+
+      const intervalId = setInterval(() => {
+        if (wordIdx < words.length) {
+          currentText += (wordIdx === 0 ? "" : " ") + words[wordIdx]
+          setDisplayedText(currentText)
+          wordIdx++
+        } else {
+          clearInterval(intervalId)
+          if (typeof onComplete === 'function') {
+            onComplete()
+          }
+        }
+      }, 30)
+
+      return () => {
+        clearInterval(intervalId)
+      }
+    }, [text])
+
+    return (
+      <>
+        {renderMessageText(displayedText)}
+      </>
+    )
+  }
+
   // Split rendering for Assistant response containing blocks
   const renderAssistantMessage = (msg) => {
     if (!msg.content) {
@@ -1107,6 +1141,12 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         </div>
       )
     }
+
+    const isMsgNew = msg.role === 'assistant' && 
+                     !msg.isLocal && 
+                     msg.id &&
+                     !typedMessageIdsRef.current.has(msg.id) && 
+                     (new Date() - new Date(msg.created_at) < 15000)
 
     const replyData = renderReplyQuote(msg.content)
     const blocks = parseAIResponse(replyData.cleanContent)
@@ -1123,7 +1163,18 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
                 key={idx}
                 className="px-4 py-3 rounded-2xl rounded-tl-none text-base leading-relaxed font-sans bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 shadow-md shadow-rose-500/5 w-full"
               >
-                {renderMessageText(block.content)}
+                {isMsgNew ? (
+                  <TypewriterText 
+                    text={block.content} 
+                    onComplete={() => {
+                      if (msg.id) {
+                        typedMessageIdsRef.current.add(msg.id)
+                      }
+                    }} 
+                  />
+                ) : (
+                  renderMessageText(block.content)
+                )}
               </div>
             )
           } else if (block.type === 'code') {
