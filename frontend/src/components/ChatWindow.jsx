@@ -1428,7 +1428,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
           {/* Share Active Chat Button */}
           {activeSessionId && (
             <button
-              onClick={() => setShareSession({ id: activeSessionId, title: sessions.find(s => s.id === activeSessionId)?.title })}
+              onClick={() => setShareSession({ id: activeSessionId, title: sessions.find(s => s.id === activeSessionId)?.title, mode: 'share' })}
               className="text-wine-900 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-all duration-300 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider font-sans border border-transparent"
               title="Share this active conversation"
             >
@@ -1442,7 +1442,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
             onClick={async () => {
               try {
                 const newSess = await createSession("Group Chat Room")
-                setShareSession({ id: newSess.id, title: newSess.title })
+                setShareSession({ id: newSess.id, title: newSess.title, mode: 'group' })
               } catch (e) {
                 alert("Failed to start group chat: " + e.message)
               }
@@ -1872,6 +1872,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         onClose={() => setShareSession(null)}
         sessionId={shareSession?.id}
         sessionTitle={shareSession?.title}
+        mode={shareSession?.mode}
       />
 
     </div>

@@ -331,13 +331,22 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
   // Redirect mobile web visitors to the native APK app if installed
   useEffect(() => {
-    const isMobileBrowser = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) && !window.Capacitor
+    const ua = navigator.userAgent || navigator.vendor || window.opera
+    const isAndroid = /android/i.test(ua)
+    const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream
+    const isMobileBrowser = (isAndroid || isIOS) && !window.Capacitor
+
     if (isMobileBrowser && sessionId) {
       const scheme = "org.maya.companion"
-      const appUrl = `${scheme}://${isGroupChat ? 'group' : 'share'}/${sessionId}`
-
-      // Attempt redirection to the app URL scheme
-      window.location.href = appUrl
+      if (isAndroid) {
+        // Intent URL for Android Chrome to bypass browser redirect blocks and automatically open local APK app
+        const intentUrl = `intent://${isGroupChat ? 'group' : 'share'}/${sessionId}#Intent;scheme=${scheme};package=${scheme};end`
+        window.location.href = intentUrl
+      } else {
+        // Custom URI Scheme redirect for iOS
+        const appUrl = `${scheme}://${isGroupChat ? 'group' : 'share'}/${sessionId}`
+        window.location.href = appUrl
+      }
     }
   }, [sessionId, isGroupChat])
 

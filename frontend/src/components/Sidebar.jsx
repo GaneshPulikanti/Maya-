@@ -112,7 +112,7 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
 
   const handleShareClick = (e, session) => {
     e.stopPropagation()
-    setShareSession({ id: session.id, title: session.title })
+    setShareSession({ id: session.id, title: session.title, mode: 'share' })
     setActiveMenuId(null)
   }
 
@@ -362,7 +362,7 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
                                   updatedTitle = `${currentTitle.replace('👥 ', '')} (Group)`
                                   await renameSession(session.id, updatedTitle)
                                 }
-                                setShareSession({ id: session.id, title: updatedTitle })
+                                 setShareSession({ id: session.id, title: updatedTitle, mode: 'group' })
                               } catch (err) {
                                 console.error("Failed to convert to group chat:", err)
                               }
@@ -448,6 +448,7 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
         onClose={() => setShareSession(null)}
         sessionId={shareSession?.id}
         sessionTitle={shareSession?.title}
+        mode={shareSession?.mode}
       />
     </>
   )

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { X, Share2, Copy, Check, FileText, Download, Loader2, Code } from 'lucide-react'
 import { api } from '../context/AuthContext'
 
-export default function ShareModal({ isOpen, onClose, sessionId, sessionTitle }) {
+export default function ShareModal({ isOpen, onClose, sessionId, sessionTitle, mode }) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
@@ -40,7 +40,7 @@ export default function ShareModal({ isOpen, onClose, sessionId, sessionTitle })
   // Create a clean public-looking shareable link targeting the production domain
   const isLocalDev = window.location.port === '5173' || window.location.hostname === '127.0.0.1' || (window.location.hostname === 'localhost' && window.location.port !== '')
   const webBaseUrl = isLocalDev ? window.location.origin : 'https://maya-companian.vercel.app'
-  const isGroupChat = sessionTitle?.toLowerCase().includes('group')
+  const isGroupChat = mode === 'group'
   const shareUrl = `${webBaseUrl}/${isGroupChat ? 'group' : 'share'}/${sessionId}`
 
   const fallbackCopy = (text) => {
