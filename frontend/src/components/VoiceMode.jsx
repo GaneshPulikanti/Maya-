@@ -69,7 +69,10 @@ function speakText(rawText, onDone, onError) {
       fallbackTimeout = null
     }
 
-    if (!window.speechSynthesis) {
+    const isMobileWebView = typeof window !== 'undefined' && 
+      (window.Capacitor || /android|ipad|iphone|ipod/i.test(navigator.userAgent))
+
+    if (!window.speechSynthesis || isMobileWebView) {
       runOrpheusFallback()
       return
     }

@@ -81,16 +81,45 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     return colors[Math.abs(hash) % colors.length]
   }
 
-  const speakMessageText = (text, msgId) => {
-    if (!window.speechSynthesis) return
-    
+  const activeAudioRef = useRef(null)
+
+  const speakMessageText = async (text, msgId) => {
+    // If clicking the currently speaking message, stop it
     if (speakingId === msgId) {
+      if (activeAudioRef.current) {
+        try {
+          activeAudioRef.current.pause()
+          activeAudioRef.current.src = ''
+          if (document.body.contains(activeAudioRef.current)) {
+            document.body.removeChild(activeAudioRef.current)
+          }
+        } catch (e) {}
+        activeAudioRef.current = null
+      }
       try {
-        window.speechSynthesis.cancel()
+        if (window.speechSynthesis) {
+          window.speechSynthesis.cancel()
+        }
       } catch (e) {}
       setSpeakingId(null)
       return
     }
+
+    // Stop any active speech first
+    if (activeAudioRef.current) {
+      try {
+        activeAudioRef.current.pause()
+        if (document.body.contains(activeAudioRef.current)) {
+          document.body.removeChild(activeAudioRef.current)
+        }
+      } catch (e) {}
+      activeAudioRef.current = null
+    }
+    try {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel()
+      }
+    } catch (e) {}
     
     // Clean markdown and formatting
     const clean = text
@@ -106,53 +135,104 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
     if (!clean) return
 
-    const utterance = new SpeechSynthesisUtterance(clean)
-    utterance.lang = 'en-US' // Explicitly set language for Android WebView support
-    utterance.rate = 1.0
-    utterance.pitch = 1.05
-    utterance.volume = 1.0
-    
-    // Use functional updater to avoid async cancel callbacks resetting the wrong speakingId
-    utterance.onend = () => {
-      setSpeakingId(prev => prev === msgId ? null : prev)
-    }
-    utterance.onerror = (e) => {
-      console.error("SpeechSynthesis error:", e)
-      setSpeakingId(prev => prev === msgId ? null : prev)
-    }
-
-    // Choose premium female voice
-    const voices = window.speechSynthesis.getVoices()
-    const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
-    
-    // On Android, skip setting custom voice to avoid remote voice download silent failures
-    if (!isAndroid) {
-      const femaleVoice = voices.find(v => 
-        ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-          v.name.includes(name)
-        )
-      ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-      if (femaleVoice) utterance.voice = femaleVoice
-    }
-
     setSpeakingId(msgId)
 
-    const doSpeak = () => {
+    const isMobileWebView = typeof window !== 'undefined' && 
+      (window.Capacitor || /android|ipad|iphone|ipod/i.test(navigator.userAgent))
+
+    let speechWorked = false
+
+    // Try SpeechSynthesis first if we are on a desktop browser where it works instantly
+    if (!isMobileWebView && window.speechSynthesis) {
       try {
+        const utterance = new SpeechSynthesisUtterance(clean)
+        utterance.lang = 'en-US' // Explicitly set language for Android WebView support
+        utterance.rate = 1.0
+        utterance.pitch = 1.05
+        utterance.volume = 1.0
+        
+        // Use functional updater to avoid async cancel callbacks resetting the wrong speakingId
+        utterance.onend = () => {
+          setSpeakingId(prev => prev === msgId ? null : prev)
+        }
+        utterance.onerror = (e) => {
+          console.error("SpeechSynthesis error:", e)
+          setSpeakingId(prev => prev === msgId ? null : prev)
+        }
+
+        // Choose premium female voice
+        const voices = window.speechSynthesis.getVoices()
+        const femaleVoice = voices.find(v => 
+          ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
+            v.name.includes(name)
+          )
+        ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
+        if (femaleVoice) utterance.voice = femaleVoice
+
         window.speechSynthesis.speak(utterance)
+        speechWorked = true
       } catch (err) {
-        console.error("SpeechSynthesis speak failed:", err)
-        setSpeakingId(prev => prev === msgId ? null : prev)
+        console.warn("Local SpeechSynthesis failed, falling back to Orpheus:", err)
       }
     }
 
-    if (window.speechSynthesis.speaking) {
+    // If SpeechSynthesis is not supported, or failed, or we are on mobile app/WebView, use backend Orpheus TTS
+    if (!speechWorked) {
       try {
-        window.speechSynthesis.cancel()
-      } catch (e) {}
-      setTimeout(doSpeak, 100)
-    } else {
-      doSpeak()
+        const token = localStorage.getItem('token')
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
+        const res = await api.post(
+          '/api/voice/speak',
+          { text: clean, voice: 'diana' },
+          { responseType: 'blob', timeout: 12000, headers }
+        )
+
+        if (res.status === 200 && res.data?.size > 0) {
+          const base64Url = await new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.readAsDataURL(res.data)
+            reader.onloadend = () => resolve(reader.result)
+            reader.onerror = reject
+          })
+
+          const audio = document.createElement('audio')
+          audio.style.display = 'none'
+          audio.src = base64Url
+          audio.setAttribute("playsinline", "true")
+          document.body.appendChild(audio)
+
+          activeAudioRef.current = audio
+
+          const cleanup = () => {
+            try {
+              if (document.body.contains(audio)) {
+                document.body.removeChild(audio)
+              }
+            } catch (e) {}
+            if (activeAudioRef.current === audio) {
+              activeAudioRef.current = null
+            }
+          }
+
+          audio.onended = () => {
+            cleanup()
+            setSpeakingId(prev => prev === msgId ? null : prev)
+          }
+
+          audio.onerror = (e) => {
+            console.error("Orpheus audio element error:", e)
+            cleanup()
+            setSpeakingId(prev => prev === msgId ? null : prev)
+          }
+
+          await audio.play()
+        } else {
+          setSpeakingId(prev => prev === msgId ? null : prev)
+        }
+      } catch (err) {
+        console.error("Orpheus TTS failed:", err)
+        setSpeakingId(prev => prev === msgId ? null : prev)
+      }
     }
   }
 
