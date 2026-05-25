@@ -31,6 +31,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
   const [speakingId, setSpeakingId] = useState(null)
 
   const activeAudioRef = useRef(null)
+  const messagesEndRef = useRef(null)
 
   const speakMessageText = async (text, msgId) => {
     // If clicking the currently speaking message, stop it
@@ -87,39 +88,6 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
     setSpeakingId(msgId)
 
-    const runLocalSpeechSynthesis = () => {
-      if (window.speechSynthesis) {
-        try {
-          window.speechSynthesis.cancel()
-          const utterance = new SpeechSynthesisUtterance(clean)
-          utterance.lang = 'en-US'
-          utterance.rate = 1.0
-          utterance.pitch = 1.05
-          utterance.volume = 1.0
-
-          const voices = window.speechSynthesis.getVoices()
-          const femaleVoice = voices.find(v => 
-            ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-              v.name.includes(name)
-            )
-          ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-          if (femaleVoice) utterance.voice = femaleVoice
-
-          utterance.onend = () => {
-            setSpeakingId(prev => prev === msgId ? null : prev)
-          }
-          utterance.onerror = () => {
-            setSpeakingId(prev => prev === msgId ? null : prev)
-          }
-          window.speechSynthesis.speak(utterance)
-        } catch (e) {
-          setSpeakingId(prev => prev === msgId ? null : prev)
-        }
-      } else {
-        setSpeakingId(prev => prev === msgId ? null : prev)
-      }
-    }
-
     // Pre-create and unlock the audio element synchronously in the click callback gesture context
     const audio = new Audio()
     audio.setAttribute("playsinline", "true")
@@ -164,22 +132,22 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
         }
 
         audio.onerror = (e) => {
-          console.warn("Orpheus audio element error, falling back to local TTS:", e)
+          console.warn("Orpheus audio element error:", e)
           cleanup()
-          runLocalSpeechSynthesis()
+          setSpeakingId(prev => prev === msgId ? null : prev)
         }
 
         audio.src = base64Url
         await audio.play()
       } else {
         cleanup()
-        console.warn("Orpheus speak request failed, falling back to local TTS")
-        runLocalSpeechSynthesis()
+        console.warn("Orpheus speak request failed")
+        setSpeakingId(prev => prev === msgId ? null : prev)
       }
     } catch (err) {
-      console.warn("Orpheus TTS failed, falling back to local TTS:", err)
+      console.warn("Orpheus TTS failed:", err)
       cleanup()
-      runLocalSpeechSynthesis()
+      setSpeakingId(prev => prev === msgId ? null : prev)
     }
   }
 

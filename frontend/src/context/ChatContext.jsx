@@ -616,31 +616,6 @@ export const ChatProvider = ({ children }) => {
 
         const ttsTextSliced = ttsText.slice(0, 160) // Short slice for Orpheus to avoid TPD rate limits
 
-        const runLocalSpeechSynthesis = () => {
-          if (window.speechSynthesis) {
-            try {
-              window.speechSynthesis.cancel()
-              const utterance = new SpeechSynthesisUtterance(ttsText) // Use full clean text for fallback
-              utterance.lang = 'en-US'
-              utterance.rate = 1.0
-              utterance.pitch = 1.05
-              utterance.volume = 1.0
-
-              const voices = window.speechSynthesis.getVoices()
-              const femaleVoice = voices.find(v => 
-                ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-                  v.name.includes(name)
-                )
-              ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-              if (femaleVoice) utterance.voice = femaleVoice
-
-              window.speechSynthesis.speak(utterance)
-            } catch (e) {
-              console.warn("SpeechSynthesis fallback failed:", e)
-            }
-          }
-        }
-
         const runOrpheus = async () => {
           if (contextAudioRef.current) {
             try {
@@ -690,24 +665,20 @@ export const ChatProvider = ({ children }) => {
               audio.onended = () => cleanup()
               audio.onerror = () => {
                 cleanup()
-                console.warn("Orpheus error, falling back to local TTS")
-                runLocalSpeechSynthesis()
+                console.warn("Orpheus audio element error")
               }
               audio.src = base64Url
               await audio.play().catch((err) => {
-                console.warn("Auto-play Orpheus TTS failed, falling back to local TTS:", err)
+                console.warn("Auto-play Orpheus TTS failed:", err)
                 cleanup()
-                runLocalSpeechSynthesis()
               })
             } else {
               cleanup()
-              console.warn("Orpheus speak request failed, falling back to local TTS")
-              runLocalSpeechSynthesis()
+              console.warn("Orpheus speak request failed")
             }
           } catch (err) {
-            console.warn('Groq Orpheus TTS auto-play failed, falling back to local TTS:', err?.response?.status || err.message)
+            console.warn('Groq Orpheus TTS auto-play failed:', err?.response?.status || err.message)
             cleanup()
-            runLocalSpeechSynthesis()
           }
         }
 
