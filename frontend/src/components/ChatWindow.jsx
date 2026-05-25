@@ -96,11 +96,6 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         } catch (e) {}
         activeAudioRef.current = null
       }
-      try {
-        if (window.speechSynthesis) {
-          window.speechSynthesis.cancel()
-        }
-      } catch (e) {}
       setSpeakingId(null)
       return
     }
@@ -115,11 +110,6 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       } catch (e) {}
       activeAudioRef.current = null
     }
-    try {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.cancel()
-      }
-    } catch (e) {}
     
     // Clean markdown and formatting
     const clean = text
@@ -137,100 +127,78 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
 
     setSpeakingId(msgId)
 
-    const isMobileWebView = typeof window !== 'undefined' && 
-      (window.Capacitor || /android|ipad|iphone|ipod/i.test(navigator.userAgent))
+    // Pre-create and unlock the audio element synchronously in the click callback gesture context
+    const audio = new Audio()
+    audio.setAttribute("playsinline", "true")
+    audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+    try {
+      audio.play().catch(() => {})
+    } catch (e) {}
+    document.body.appendChild(audio)
+    activeAudioRef.current = audio
 
-    let speechWorked = false
+    try {
+      const token = localStorage.getItem('token')
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
+      const res = await api.post(
+        '/api/voice/speak',
+        { text: clean, voice: 'diana' },
+        { responseType: 'blob', timeout: 12000, headers }
+      )
 
-    // Try SpeechSynthesis first if we are on a desktop browser where it works instantly
-    if (!isMobileWebView && window.speechSynthesis) {
-      try {
-        const utterance = new SpeechSynthesisUtterance(clean)
-        utterance.lang = 'en-US' // Explicitly set language for Android WebView support
-        utterance.rate = 1.0
-        utterance.pitch = 1.05
-        utterance.volume = 1.0
-        
-        // Use functional updater to avoid async cancel callbacks resetting the wrong speakingId
-        utterance.onend = () => {
-          setSpeakingId(prev => prev === msgId ? null : prev)
-        }
-        utterance.onerror = (e) => {
-          console.error("SpeechSynthesis error:", e)
-          setSpeakingId(prev => prev === msgId ? null : prev)
-        }
+      if (res.status === 200 && res.data?.size > 0 && activeAudioRef.current === audio) {
+        const base64Url = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.readAsDataURL(res.data)
+          reader.onloadend = () => resolve(reader.result)
+          reader.onerror = reject
+        })
 
-        // Choose premium female voice
-        const voices = window.speechSynthesis.getVoices()
-        const femaleVoice = voices.find(v => 
-          ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-            v.name.includes(name)
-          )
-        ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-        if (femaleVoice) utterance.voice = femaleVoice
-
-        window.speechSynthesis.speak(utterance)
-        speechWorked = true
-      } catch (err) {
-        console.warn("Local SpeechSynthesis failed, falling back to Orpheus:", err)
-      }
-    }
-
-    // If SpeechSynthesis is not supported, or failed, or we are on mobile app/WebView, use backend Orpheus TTS
-    if (!speechWorked) {
-      try {
-        const token = localStorage.getItem('token')
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
-        const res = await api.post(
-          '/api/voice/speak',
-          { text: clean, voice: 'diana' },
-          { responseType: 'blob', timeout: 12000, headers }
-        )
-
-        if (res.status === 200 && res.data?.size > 0) {
-          const base64Url = await new Promise((resolve, reject) => {
-            const reader = new FileReader()
-            reader.readAsDataURL(res.data)
-            reader.onloadend = () => resolve(reader.result)
-            reader.onerror = reject
-          })
-
-          const audio = document.createElement('audio')
-          audio.style.display = 'none'
-          audio.src = base64Url
-          audio.setAttribute("playsinline", "true")
-          document.body.appendChild(audio)
-
-          activeAudioRef.current = audio
-
-          const cleanup = () => {
-            try {
-              if (document.body.contains(audio)) {
-                document.body.removeChild(audio)
-              }
-            } catch (e) {}
-            if (activeAudioRef.current === audio) {
-              activeAudioRef.current = null
+        const cleanup = () => {
+          try {
+            if (document.body.contains(audio)) {
+              document.body.removeChild(audio)
             }
+          } catch (e) {}
+          if (activeAudioRef.current === audio) {
+            activeAudioRef.current = null
           }
+        }
 
-          audio.onended = () => {
-            cleanup()
-            setSpeakingId(prev => prev === msgId ? null : prev)
-          }
-
-          audio.onerror = (e) => {
-            console.error("Orpheus audio element error:", e)
-            cleanup()
-            setSpeakingId(prev => prev === msgId ? null : prev)
-          }
-
-          await audio.play()
-        } else {
+        audio.onended = () => {
+          cleanup()
           setSpeakingId(prev => prev === msgId ? null : prev)
         }
-      } catch (err) {
-        console.error("Orpheus TTS failed:", err)
+
+        audio.onerror = (e) => {
+          console.error("Orpheus audio element error:", e)
+          cleanup()
+          setSpeakingId(prev => prev === msgId ? null : prev)
+        }
+
+        audio.src = base64Url
+        await audio.play()
+      } else {
+        // Clean up if it was stopped/changed or response was empty
+        try {
+          if (document.body.contains(audio)) {
+            document.body.removeChild(audio)
+          }
+        } catch (e) {}
+        if (activeAudioRef.current === audio) {
+          activeAudioRef.current = null
+          setSpeakingId(prev => prev === msgId ? null : prev)
+        }
+      }
+    } catch (err) {
+      console.error("Orpheus TTS failed:", err)
+      try {
+        if (document.body.contains(audio)) {
+          document.body.removeChild(audio)
+        }
+      } catch (e) {}
+      if (activeAudioRef.current === audio) {
+        activeAudioRef.current = null
         setSpeakingId(prev => prev === msgId ? null : prev)
       }
     }

@@ -28,6 +28,7 @@ export const ChatProvider = ({ children }) => {
   // Prefetching sessions tracking ref
   const prefetchingRef = useRef(new Set())
   const isInitializingRef = useRef(false)
+  const contextAudioRef = useRef(null)
 
   // Voice assistant enabled state — persisted to localStorage
   const [voiceEnabled, setVoiceEnabled] = useState(() => {
@@ -44,6 +45,16 @@ export const ChatProvider = ({ children }) => {
     try {
       localStorage.setItem('maya_voice_enabled', JSON.stringify(voiceEnabled))
     } catch {}
+    if (!voiceEnabled && contextAudioRef.current) {
+      try {
+        contextAudioRef.current.pause()
+        contextAudioRef.current.src = ''
+        if (document.body.contains(contextAudioRef.current)) {
+          document.body.removeChild(contextAudioRef.current)
+        }
+      } catch (e) {}
+      contextAudioRef.current = null
+    }
   }, [voiceEnabled])
 
   // Clone a shared chat session into the authenticated user's account
@@ -603,149 +614,83 @@ export const ChatProvider = ({ children }) => {
           .trim()
           .slice(0, 400)
 
-        const isMobileWebView = typeof window !== 'undefined' && 
-          (window.Capacitor || /android|ipad|iphone|ipod/i.test(navigator.userAgent))
-
-        // Attempt TTS — Web Speech API is primary for 0-latency, Groq Orpheus is backup
-        if (window.speechSynthesis && !isMobileWebView) {
-          const speak = () => {
-            const utterance = new SpeechSynthesisUtterance(ttsText)
-            utterance.lang = 'en-US' // Explicitly set language for Android TTS
-            utterance.rate = 1.0
-            utterance.pitch = 1.05
-            utterance.volume = 1.0
-
-            // Explicitly choose a premium female voice
-            const voices = window.speechSynthesis.getVoices()
-            const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
-            
-            // On Android, skip setting custom voice to avoid remote voice download silent failures
-            if (!isAndroid) {
-              const femaleVoice = voices.find(v => 
-                ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-                  v.name.includes(name)
-                )
-              ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-              if (femaleVoice) utterance.voice = femaleVoice
-            }
-
-            const doSpeak = () => {
-              try {
-                window.speechSynthesis.speak(utterance)
-              } catch (e) {
-                console.error("SpeechSynthesis speak failed:", e)
-                runOrpheusFallback()
-              }
-            }
-
-            if (window.speechSynthesis.speaking) {
-              try {
-                window.speechSynthesis.cancel()
-              } catch (e) {}
-              setTimeout(doSpeak, 100)
-            } else {
-              doSpeak()
-            }
-          }
-
-          const runOrpheusFallback = async () => {
+        const runOrpheus = async () => {
+          if (contextAudioRef.current) {
             try {
-              const speakResponse = await api.post(
-                '/api/voice/speak',
-                { text: ttsText, voice: 'diana' },
-                { responseType: 'blob', timeout: 12000 }
-              )
-              if (speakResponse.status === 200 && speakResponse.data.size > 0) {
-                // Switch to base64 Data URL to bypass Android WebView/Capacitor blob URL restrictions
-                const base64Url = await new Promise((resolve, reject) => {
-                  const reader = new FileReader()
-                  reader.readAsDataURL(speakResponse.data)
-                  reader.onloadend = () => resolve(reader.result)
-                  reader.onerror = reject
-                })
-                
-                // Create and append audio element to DOM to bypass WebView detached audio blocks
-                const audio = document.createElement('audio')
-                audio.style.display = 'none'
-                audio.src = base64Url
-                audio.setAttribute("playsinline", "true")
-                document.body.appendChild(audio)
-                
-                const cleanup = () => {
-                  try {
-                    if (document.body.contains(audio)) {
-                      document.body.removeChild(audio)
-                    }
-                  } catch (e) {}
-                }
-
-                audio.onended = () => {
-                  cleanup()
-                }
-                audio.onerror = () => {
-                  cleanup()
-                }
-
-                await audio.play().catch((err) => {
-                  console.error("Auto-play TTS audio failed:", err)
-                  cleanup()
-                })
+              contextAudioRef.current.pause()
+              contextAudioRef.current.src = ''
+              if (document.body.contains(contextAudioRef.current)) {
+                document.body.removeChild(contextAudioRef.current)
               }
-            } catch (err) {
-              console.warn('Groq Orpheus TTS unavailable:', err?.response?.status || err.message)
-            }
+            } catch (e) {}
+            contextAudioRef.current = null
           }
 
-          if (window.speechSynthesis.getVoices().length > 0) {
-            speak()
-          } else {
-            window.speechSynthesis.addEventListener('voiceschanged', speak, { once: true })
-            // Force trigger in case event never fires (some browsers)
-            setTimeout(speak, 300)
-          }
-        } else {
-          // Trigger Orpheus fallback immediately on mobile WebView
+          const audio = document.createElement('audio')
+          audio.style.display = 'none'
+          audio.setAttribute("playsinline", "true")
+          document.body.appendChild(audio)
+          contextAudioRef.current = audio
+
           try {
-            const runOrpheus = async () => {
-              try {
-                const speakResponse = await api.post(
-                  '/api/voice/speak',
-                  { text: ttsText, voice: 'diana' },
-                  { responseType: 'blob', timeout: 12000 }
-                )
-                if (speakResponse.status === 200 && speakResponse.data.size > 0) {
-                  const base64Url = await new Promise((resolve, reject) => {
-                    const reader = new FileReader()
-                    reader.readAsDataURL(speakResponse.data)
-                    reader.onloadend = () => resolve(reader.result)
-                    reader.onerror = reject
-                  })
-                  const audio = document.createElement('audio')
-                  audio.style.display = 'none'
-                  audio.src = base64Url
-                  audio.setAttribute("playsinline", "true")
-                  document.body.appendChild(audio)
-                  const cleanup = () => {
-                    try {
-                      if (document.body.contains(audio)) {
-                        document.body.removeChild(audio)
-                      }
-                    } catch (e) {}
+            const token = localStorage.getItem('token')
+            const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
+            const speakResponse = await api.post(
+              '/api/voice/speak',
+              { text: ttsText, voice: 'diana' },
+              { responseType: 'blob', timeout: 12000, headers }
+            )
+
+            if (speakResponse.status === 200 && speakResponse.data?.size > 0 && contextAudioRef.current === audio) {
+              const base64Url = await new Promise((resolve, reject) => {
+                const reader = new FileReader()
+                reader.readAsDataURL(speakResponse.data)
+                reader.onloadend = () => resolve(reader.result)
+                reader.onerror = reject
+              })
+
+              const cleanup = () => {
+                try {
+                  if (document.body.contains(audio)) {
+                    document.body.removeChild(audio)
                   }
-                  audio.onended = () => cleanup()
-                  audio.onerror = () => cleanup()
-                  await audio.play().catch((err) => {
-                    console.error("Auto-play TTS audio failed on mobile:", err)
-                    cleanup()
-                  })
+                } catch (e) {}
+                if (contextAudioRef.current === audio) {
+                  contextAudioRef.current = null
                 }
-              } catch (err) {
-                console.warn('Groq Orpheus TTS unavailable on mobile:', err?.response?.status || err.message)
+              }
+
+              audio.onended = () => cleanup()
+              audio.onerror = () => cleanup()
+              audio.src = base64Url
+              await audio.play().catch((err) => {
+                console.error("Auto-play Orpheus TTS audio failed:", err)
+                cleanup()
+              })
+            } else {
+              try {
+                if (document.body.contains(audio)) {
+                  document.body.removeChild(audio)
+                }
+              } catch (e) {}
+              if (contextAudioRef.current === audio) {
+                contextAudioRef.current = null
               }
             }
-            runOrpheus()
-          } catch (e) {}
+          } catch (err) {
+            console.warn('Groq Orpheus TTS auto-play failed:', err?.response?.status || err.message)
+            try {
+              if (document.body.contains(audio)) {
+                document.body.removeChild(audio)
+              }
+            } catch (e) {}
+            if (contextAudioRef.current === audio) {
+              contextAudioRef.current = null
+            }
+          }
         }
+
+        runOrpheus()
       }
 
     } catch (error) {

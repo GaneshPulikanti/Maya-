@@ -47,9 +47,7 @@ function speakText(rawText, onDone, onError) {
 
   let finished = false
   let activeAudio = null
-  let utter = null
   let fallbackTimeout = null
-  let usingSpeechSynthesis = false
 
   const done = () => {
     if (finished) return
@@ -61,173 +59,91 @@ function speakText(rawText, onDone, onError) {
     onDone?.()
   }
 
-  const runSpeechSynthesis = () => {
-    if (finished) return
-    usingSpeechSynthesis = true
-    if (fallbackTimeout) {
-      clearTimeout(fallbackTimeout)
-      fallbackTimeout = null
+  // Pre-create and unlock the audio element synchronously
+  const audio = document.createElement('audio')
+  audio.style.display = 'none'
+  audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+  audio.setAttribute("playsinline", "true")
+  document.body.appendChild(audio)
+  try {
+    audio.play().catch(() => {})
+  } catch (e) {}
+  activeAudio = audio
+
+  // Set a backup timeout: if Orpheus doesn't load/play within 4.5 seconds, just finish
+  fallbackTimeout = setTimeout(() => {
+    if (!finished && activeAudio && activeAudio.src.startsWith('data:audio/wav')) {
+      console.warn("Orpheus TTS timed out, finishing")
+      try { document.body.removeChild(audio) } catch (e) {}
+      done()
     }
+  }, 5500)
 
-    const isMobileWebView = typeof window !== 'undefined' && 
-      (window.Capacitor || /android|ipad|iphone|ipod/i.test(navigator.userAgent))
-
-    if (!window.speechSynthesis || isMobileWebView) {
-      runOrpheusFallback()
-      return
-    }
-
-    try {
-      utter = new SpeechSynthesisUtterance(text)
-      utter.lang = 'en-US' // Explicitly set language for Android TTS
-      utter.rate = 1.05
-      utter.pitch = 1.05
-      utter.volume = 1.0
-      utter.onend = done
-      utter.onerror = (e) => {
-        console.error("SpeechSynthesis utterance error:", e)
-        if (!finished && !activeAudio) {
-          runOrpheusFallback()
-        } else {
-          done()
-        }
+  api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 12000 })
+    .then(res => {
+      if (finished) {
+        try { document.body.removeChild(audio) } catch (e) {}
+        return
       }
-
-      const go = () => {
-        if (!finished) {
-          const voices = window.speechSynthesis.getVoices()
-          const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
-          
-          // On Android, skip setting custom voice to avoid remote voice download silent failures
-          if (!isAndroid) {
-            const femaleVoice = voices.find(v =>
-              ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name =>
-                v.name.includes(name)
-              )
-            ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-            if (femaleVoice) utter.voice = femaleVoice
-          }
-          
-          const doSpeak = () => {
-            try {
-              window.speechSynthesis.speak(utter)
-            } catch (err) {
-              console.error("SpeechSynthesis failed, trying Orpheus:", err)
-              runOrpheusFallback()
-            }
-          }
-
-          if (window.speechSynthesis.speaking) {
-            try { window.speechSynthesis.cancel() } catch (e) {}
-            setTimeout(doSpeak, 100)
-          } else {
-            doSpeak()
-          }
-        }
-      }
-
-      if (window.speechSynthesis.getVoices().length > 0) {
-        go()
-      } else {
-        window.speechSynthesis.addEventListener('voiceschanged', go, { once: true })
-        // force-start in case 'voiceschanged' doesn't fire (some browsers)
-        setTimeout(go, 250)
-      }
-    } catch (err) {
-      console.error("SpeechSynthesis failed, trying Orpheus:", err)
-      runOrpheusFallback()
-    }
-  }
-
-  const runOrpheusFallback = () => {
-    if (finished || activeAudio) return
-    
-    // Set a backup timeout: if Orpheus doesn't load/play within 4.5 seconds, just finish
-    fallbackTimeout = setTimeout(() => {
-      if (!finished && !activeAudio) {
-        console.warn("Orpheus TTS timed out, finishing")
+      if (!res?.data?.size) {
+        try { document.body.removeChild(audio) } catch (e) {}
         done()
+        return
       }
-    }, 4500)
 
-    api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 8000 })
-      .then(res => {
-        if (finished) return
-        if (!res?.data?.size) {
-          done()
-          return
-        }
-
-        try {
-          const reader = new FileReader()
-          reader.readAsDataURL(res.data)
-          reader.onloadend = () => {
-            if (finished) return
-            const base64Url = reader.result
-            
-            const audio = document.createElement('audio')
-            audio.style.display = 'none'
-            audio.src = base64Url
-            audio.setAttribute("playsinline", "true")
-            document.body.appendChild(audio)
-            
-            activeAudio = audio
-
-            const cleanup = () => {
-              try {
-                if (document.body.contains(audio)) {
-                  document.body.removeChild(audio)
-                }
-              } catch (e) {}
-            }
-
-            audio.onended = () => {
-              cleanup()
-              activeAudio = null
-              done()
-            }
-
-            audio.onerror = (e) => {
-              console.error("Audio playback error:", e)
-              cleanup()
-              activeAudio = null
-              done()
-            }
-
-            audio.oncanplaythrough = async () => {
-              if (finished) {
-                cleanup()
-                return
-              }
-              
-              if (fallbackTimeout) {
-                clearTimeout(fallbackTimeout)
-                fallbackTimeout = null
-              }
-              try {
-                await audio.play()
-              } catch (err) {
-                console.error("Audio play failed:", err)
-                cleanup()
-                activeAudio = null
-                done()
-              }
-            }
+      try {
+        const reader = new FileReader()
+        reader.readAsDataURL(res.data)
+        reader.onloadend = () => {
+          if (finished) {
+            try { document.body.removeChild(audio) } catch (e) {}
+            return
           }
-          reader.onerror = () => {
+          const base64Url = reader.result
+          
+          const cleanup = () => {
+            try {
+              if (document.body.contains(audio)) {
+                document.body.removeChild(audio)
+              }
+            } catch (e) {}
+          }
+
+          audio.onended = () => {
+            cleanup()
+            activeAudio = null
             done()
           }
-        } catch (err) {
+
+          audio.onerror = (e) => {
+            console.error("Orpheus audio playback error:", e)
+            cleanup()
+            activeAudio = null
+            done()
+          }
+
+          audio.src = base64Url
+          audio.play().catch((err) => {
+            console.error("Orpheus audio play failed:", err)
+            cleanup()
+            activeAudio = null
+            done()
+          })
+        }
+        reader.onerror = () => {
+          try { document.body.removeChild(audio) } catch (e) {}
           done()
         }
-      })
-      .catch(err => {
+      } catch (err) {
+        try { document.body.removeChild(audio) } catch (e) {}
         done()
-      })
-  }
-
-  // Execute SpeechSynthesis immediately with 0-latency
-  runSpeechSynthesis()
+      }
+    })
+    .catch(err => {
+      console.warn("Orpheus TTS request failed", err)
+      try { document.body.removeChild(audio) } catch (e) {}
+      done()
+    })
 
   // Return clean cancellation function
   return () => {
@@ -235,11 +151,6 @@ function speakText(rawText, onDone, onError) {
     if (fallbackTimeout) {
       clearTimeout(fallbackTimeout)
       fallbackTimeout = null
-    }
-    if (window.speechSynthesis) {
-      try {
-        window.speechSynthesis.cancel()
-      } catch { }
     }
     if (activeAudio) {
       try {
@@ -307,6 +218,9 @@ export default function VoiceMode({ isOpen, onClose }) {
   const isOpenRef = useRef(isOpen)
   const isAndroidRef = useRef(typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android')))
   const recordingMethodRef = useRef('mediarecorder')
+  const vadIntervalRef = useRef(null)
+  const audioContextRef = useRef(null)
+  const vadSourceRef = useRef(null)
 
   useEffect(() => {
     isOpenRef.current = isOpen
@@ -348,6 +262,8 @@ export default function VoiceMode({ isOpen, onClose }) {
     if (isOpen) {
       prevStreamingRef.current = false
       waitingRef.current = false
+      unlockAudio()
+      startRec()
     } else {
       stopEverything()
       setPhaseSync(PHASE.IDLE)
@@ -402,6 +318,18 @@ export default function VoiceMode({ isOpen, onClose }) {
       try { speakCancelRef.current() } catch { }
       speakCancelRef.current = null
     }
+    if (vadIntervalRef.current) {
+      clearInterval(vadIntervalRef.current)
+      vadIntervalRef.current = null
+    }
+    if (vadSourceRef.current) {
+      try { vadSourceRef.current.disconnect() } catch (e) {}
+      vadSourceRef.current = null
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try { audioContextRef.current.close() } catch (e) {}
+      audioContextRef.current = null
+    }
     if (recordingMethodRef.current === 'capacitor' && AudioRecorder) {
       try {
         AudioRecorder.stopRecording().catch(err => {
@@ -426,7 +354,121 @@ export default function VoiceMode({ isOpen, onClose }) {
     setError('')
     chunksRef.current = []
 
-    // Try Capacitor plugin first on Android devices
+    let stream = null
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+    } catch (err) {
+      console.warn("navigator.mediaDevices.getUserMedia failed:", err)
+    }
+
+    // If we obtained the stream, set up the VAD and record with MediaRecorder
+    if (stream) {
+      try {
+        let opts = {}
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          opts = { mimeType: 'audio/webm;codecs=opus' }
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          opts = { mimeType: 'audio/webm' }
+        } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+          opts = { mimeType: 'audio/ogg;codecs=opus' }
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          opts = { mimeType: 'audio/mp4' }
+        }
+
+        const rec = new MediaRecorder(stream, opts)
+        mediaRecRef.current = rec
+        recordingMethodRef.current = 'mediarecorder'
+
+        rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+        rec.onstop = async () => {
+          // Clean up stream tracks
+          streamRef.current?.getTracks().forEach(t => t.stop())
+          streamRef.current = null
+          if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+          
+          // Clean up VAD
+          if (vadIntervalRef.current) {
+            clearInterval(vadIntervalRef.current)
+            vadIntervalRef.current = null
+          }
+          if (vadSourceRef.current) {
+            try { vadSourceRef.current.disconnect() } catch (e) {}
+            vadSourceRef.current = null
+          }
+          if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+            try { audioContextRef.current.close() } catch (e) {}
+            audioContextRef.current = null
+          }
+
+          if (mountedRef.current && !abortRecRef.current) {
+            await transcribeAndSend()
+          }
+          abortRecRef.current = false // Reset for next time
+        }
+
+        // Start Silence Detection VAD using Web Audio API
+        try {
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+          audioContextRef.current = audioContext
+          
+          const source = audioContext.createMediaStreamSource(stream)
+          vadSourceRef.current = source
+          
+          const analyser = audioContext.createAnalyser()
+          analyser.fftSize = 512
+          source.connect(analyser)
+          
+          const bufferLength = analyser.fftSize
+          const dataArray = new Uint8Array(bufferLength)
+          
+          let lastSoundTime = Date.now()
+          const silenceThreshold = 8 // Adjust amplitude threshold (0-128 range)
+          const silenceDuration = 1800 // 1.8 seconds of silence before auto-send
+          
+          const checkSilence = () => {
+            if (phaseRef.current !== PHASE.LISTENING) return
+            
+            analyser.getByteTimeDomainData(dataArray)
+            
+            let maxVal = 0
+            for (let i = 0; i < bufferLength; i++) {
+              const val = Math.abs(dataArray[i] - 128)
+              if (val > maxVal) maxVal = val
+            }
+            
+            if (maxVal > silenceThreshold) {
+              lastSoundTime = Date.now()
+            } else {
+              const elapsed = Date.now() - lastSoundTime
+              if (elapsed > silenceDuration) {
+                // Silence detected! Stop recording automatically and send
+                if (vadIntervalRef.current) {
+                  clearInterval(vadIntervalRef.current)
+                  vadIntervalRef.current = null
+                }
+                stopRec()
+              }
+            }
+          }
+          
+          vadIntervalRef.current = setInterval(checkSilence, 100)
+        } catch (err) {
+          console.warn("Failed to initialize VAD silence detection:", err)
+        }
+
+        rec.start()
+        setPhaseSync(PHASE.LISTENING)
+        setRecSecs(0)
+        timerRef.current = setInterval(() => setRecSecs(s => s + 1), 1000)
+        return
+      } catch (e) {
+        console.error('MediaRecorder initialization failed:', e)
+        // Fall back to Capacitor
+      }
+    }
+
+    // Try Capacitor plugin fallback on Android devices if getUserMedia/MediaRecorder failed
     if (isAndroidRef.current && AudioRecorder && isCapacitorAvailable) {
       try {
         await AudioRecorder.startRecording()
@@ -436,59 +478,34 @@ export default function VoiceMode({ isOpen, onClose }) {
         timerRef.current = setInterval(() => setRecSecs(s => s + 1), 1000)
         return
       } catch (err) {
-        console.warn('Capacitor recording failed, falling back to MediaRecorder:', err)
-        // Continue to MediaRecorder fallback
+        console.warn('Capacitor recording failed:', err)
       }
     }
 
-    // Fallback to MediaRecorder API (web and some Android WebViews)
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-
-      let opts = {}
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-        opts = { mimeType: 'audio/webm;codecs=opus' }
-      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-        opts = { mimeType: 'audio/webm' }
-      } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
-        opts = { mimeType: 'audio/ogg;codecs=opus' }
-      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        opts = { mimeType: 'audio/mp4' }
-      }
-
-      const rec = new MediaRecorder(stream, opts)
-      mediaRecRef.current = rec
-      recordingMethodRef.current = 'mediarecorder'
-
-      rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-      rec.onstop = async () => {
-        streamRef.current?.getTracks().forEach(t => t.stop())
-        streamRef.current = null
-        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-        if (mountedRef.current && !abortRecRef.current) {
-          await transcribeAndSend()
-        }
-        abortRecRef.current = false // Reset for next time
-      }
-      rec.start()
-      setPhaseSync(PHASE.LISTENING)
-      setRecSecs(0)
-      timerRef.current = setInterval(() => setRecSecs(s => s + 1), 1000)
-    } catch (e) {
-      console.error('Mic error:', e)
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setError("Microphone access is restricted. On mobile, you must use 'https://' or 'localhost'.")
-      } else {
-        setError('Microphone access denied. Allow mic permissions in your browser.')
-      }
-      setPhaseSync(PHASE.IDLE)
-    }
+    setError('Microphone access denied or failed to initialize recording.')
+    setPhaseSync(PHASE.IDLE)
   }
 
   // ── Stop recording ─────────────────────────────────────────────────────────
   const stopRec = async () => {
     abortRecRef.current = false // Intentional user finish (not aborting)
+
+    if (vadIntervalRef.current) {
+      clearInterval(vadIntervalRef.current)
+      vadIntervalRef.current = null
+    }
+    if (vadSourceRef.current) {
+      try { vadSourceRef.current.disconnect() } catch (e) {}
+      vadSourceRef.current = null
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try { audioContextRef.current.close() } catch (e) {}
+      audioContextRef.current = null
+    }
+    if (streamRef.current) {
+      try { streamRef.current.getTracks().forEach(t => t.stop()) } catch (e) {}
+      streamRef.current = null
+    }
 
     if (recordingMethodRef.current === 'capacitor' && AudioRecorder) {
       try {
