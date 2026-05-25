@@ -12,7 +12,8 @@ import { Heart } from 'lucide-react'
 const DashboardContent = ({ sidebarOpen, setSidebarOpen, docsOpen, setDocsOpen }) => {
   const { showSharedViewOnly } = useChat()
   const pathParts = window.location.pathname.split('/')
-  const sharedSessionId = pathParts[1] === 'share' ? pathParts[2] : null
+  const isSharedOrGroup = pathParts[1] === 'share' || pathParts[1] === 'group'
+  const sharedSessionId = isSharedOrGroup && pathParts[2] ? pathParts[2] : null
 
   if (showSharedViewOnly && sharedSessionId) {
     return (
@@ -95,7 +96,7 @@ const AppContent = () => {
 
   // Intercept shared link URL path directly from the browser window location
   const pathParts = window.location.pathname.split('/')
-  const isSharedPath = pathParts[1] === 'share' && pathParts[2]
+  const isSharedPath = (pathParts[1] === 'share' || pathParts[1] === 'group') && pathParts[2]
 
   // Full-screen loading loader
   if (loading) {

@@ -96,6 +96,11 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         } catch (e) {}
         activeAudioRef.current = null
       }
+      try {
+        if (window.speechSynthesis) {
+          window.speechSynthesis.cancel()
+        }
+      } catch (e) {}
       setSpeakingId(null)
       return
     }
@@ -110,6 +115,11 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       } catch (e) {}
       activeAudioRef.current = null
     }
+    try {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel()
+      }
+    } catch (e) {}
     
     // Clean markdown and formatting
     const clean = text
@@ -121,11 +131,45 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       .replace(/\[(.*?)\]\(.*?\)/g, '$1') // links
       .replace(/👥|❤️|✨|😊|💕|🌸|👋/g, '') // remove emojis
       .trim()
-      .slice(0, 400)
+
+    const cleanSliced = clean.slice(0, 160) // Short slice for Orpheus to avoid TPD rate limits
 
     if (!clean) return
 
     setSpeakingId(msgId)
+
+    const runLocalSpeechSynthesis = () => {
+      if (window.speechSynthesis) {
+        try {
+          window.speechSynthesis.cancel()
+          const utterance = new SpeechSynthesisUtterance(clean)
+          utterance.lang = 'en-US'
+          utterance.rate = 1.0
+          utterance.pitch = 1.05
+          utterance.volume = 1.0
+
+          const voices = window.speechSynthesis.getVoices()
+          const femaleVoice = voices.find(v => 
+            ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
+              v.name.includes(name)
+            )
+          ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
+          if (femaleVoice) utterance.voice = femaleVoice
+
+          utterance.onend = () => {
+            setSpeakingId(prev => prev === msgId ? null : prev)
+          }
+          utterance.onerror = () => {
+            setSpeakingId(prev => prev === msgId ? null : prev)
+          }
+          window.speechSynthesis.speak(utterance)
+        } catch (e) {
+          setSpeakingId(prev => prev === msgId ? null : prev)
+        }
+      } else {
+        setSpeakingId(prev => prev === msgId ? null : prev)
+      }
+    }
 
     // Pre-create and unlock the audio element synchronously in the click callback gesture context
     const audio = new Audio()
@@ -137,12 +181,23 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     document.body.appendChild(audio)
     activeAudioRef.current = audio
 
+    const cleanup = () => {
+      try {
+        if (document.body.contains(audio)) {
+          document.body.removeChild(audio)
+        }
+      } catch (e) {}
+      if (activeAudioRef.current === audio) {
+        activeAudioRef.current = null
+      }
+    }
+
     try {
       const token = localStorage.getItem('token')
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
       const res = await api.post(
         '/api/voice/speak',
-        { text: clean, voice: 'diana' },
+        { text: cleanSliced, voice: 'diana' },
         { responseType: 'blob', timeout: 12000, headers }
       )
 
@@ -154,53 +209,28 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
           reader.onerror = reject
         })
 
-        const cleanup = () => {
-          try {
-            if (document.body.contains(audio)) {
-              document.body.removeChild(audio)
-            }
-          } catch (e) {}
-          if (activeAudioRef.current === audio) {
-            activeAudioRef.current = null
-          }
-        }
-
         audio.onended = () => {
           cleanup()
           setSpeakingId(prev => prev === msgId ? null : prev)
         }
 
         audio.onerror = (e) => {
-          console.error("Orpheus audio element error:", e)
+          console.warn("Orpheus audio element error, falling back to local TTS:", e)
           cleanup()
-          setSpeakingId(prev => prev === msgId ? null : prev)
+          runLocalSpeechSynthesis()
         }
 
         audio.src = base64Url
         await audio.play()
       } else {
-        // Clean up if it was stopped/changed or response was empty
-        try {
-          if (document.body.contains(audio)) {
-            document.body.removeChild(audio)
-          }
-        } catch (e) {}
-        if (activeAudioRef.current === audio) {
-          activeAudioRef.current = null
-          setSpeakingId(prev => prev === msgId ? null : prev)
-        }
+        cleanup()
+        console.warn("Orpheus speak request failed, falling back to local TTS")
+        runLocalSpeechSynthesis()
       }
     } catch (err) {
-      console.error("Orpheus TTS failed:", err)
-      try {
-        if (document.body.contains(audio)) {
-          document.body.removeChild(audio)
-        }
-      } catch (e) {}
-      if (activeAudioRef.current === audio) {
-        activeAudioRef.current = null
-        setSpeakingId(prev => prev === msgId ? null : prev)
-      }
+      console.warn("Orpheus TTS failed, falling back to local TTS:", err)
+      cleanup()
+      runLocalSpeechSynthesis()
     }
   }
 

@@ -108,7 +108,8 @@ export const ChatProvider = ({ children }) => {
       setSessions(response.data)
       
       const pathParts = window.location.pathname.split('/')
-      const sharedSessionId = pathParts[1] === 'share' ? pathParts[2] : null
+      const isSharedOrGroup = pathParts[1] === 'share' || pathParts[1] === 'group'
+      const sharedSessionId = isSharedOrGroup && pathParts[2] ? pathParts[2] : null
       const continueSharedId = sessionStorage.getItem('continue_shared_session_id')
       const joinSharedId = sessionStorage.getItem('join_shared_session_id')
 
@@ -275,7 +276,7 @@ export const ChatProvider = ({ children }) => {
       setSessionsMessages({})
       setShowSharedViewOnly(false)
       const pathParts = window.location.pathname.split('/')
-      const isSharedPath = pathParts[1] === 'share' && pathParts[2]
+      const isSharedPath = (pathParts[1] === 'share' || pathParts[1] === 'group') && pathParts[2]
       if (!isSharedPath && window.location.pathname !== '/') {
         window.history.pushState({}, '', '/')
       }
@@ -340,7 +341,7 @@ export const ChatProvider = ({ children }) => {
       if (showSharedViewOnly) return
 
       const pathParts = window.location.pathname.split('/')
-      const isSharedPath = pathParts[1] === 'share' && pathParts[2]
+      const isSharedPath = (pathParts[1] === 'share' || pathParts[1] === 'group') && pathParts[2]
       if (isSharedPath) return
 
       if (activeSessionId) {
@@ -612,7 +613,33 @@ export const ChatProvider = ({ children }) => {
           .replace(/[|\-]{3,}/g, '')
           .replace(/\n{2,}/g, '. ')
           .trim()
-          .slice(0, 400)
+
+        const ttsTextSliced = ttsText.slice(0, 160) // Short slice for Orpheus to avoid TPD rate limits
+
+        const runLocalSpeechSynthesis = () => {
+          if (window.speechSynthesis) {
+            try {
+              window.speechSynthesis.cancel()
+              const utterance = new SpeechSynthesisUtterance(ttsText) // Use full clean text for fallback
+              utterance.lang = 'en-US'
+              utterance.rate = 1.0
+              utterance.pitch = 1.05
+              utterance.volume = 1.0
+
+              const voices = window.speechSynthesis.getVoices()
+              const femaleVoice = voices.find(v => 
+                ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
+                  v.name.includes(name)
+                )
+              ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
+              if (femaleVoice) utterance.voice = femaleVoice
+
+              window.speechSynthesis.speak(utterance)
+            } catch (e) {
+              console.warn("SpeechSynthesis fallback failed:", e)
+            }
+          }
+        }
 
         const runOrpheus = async () => {
           if (contextAudioRef.current) {
@@ -632,12 +659,23 @@ export const ChatProvider = ({ children }) => {
           document.body.appendChild(audio)
           contextAudioRef.current = audio
 
+          const cleanup = () => {
+            try {
+              if (document.body.contains(audio)) {
+                document.body.removeChild(audio)
+              }
+            } catch (e) {}
+            if (contextAudioRef.current === audio) {
+              contextAudioRef.current = null
+            }
+          }
+
           try {
             const token = localStorage.getItem('token')
             const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
             const speakResponse = await api.post(
               '/api/voice/speak',
-              { text: ttsText, voice: 'diana' },
+              { text: ttsTextSliced, voice: 'diana' },
               { responseType: 'blob', timeout: 12000, headers }
             )
 
@@ -649,44 +687,27 @@ export const ChatProvider = ({ children }) => {
                 reader.onerror = reject
               })
 
-              const cleanup = () => {
-                try {
-                  if (document.body.contains(audio)) {
-                    document.body.removeChild(audio)
-                  }
-                } catch (e) {}
-                if (contextAudioRef.current === audio) {
-                  contextAudioRef.current = null
-                }
-              }
-
               audio.onended = () => cleanup()
-              audio.onerror = () => cleanup()
+              audio.onerror = () => {
+                cleanup()
+                console.warn("Orpheus error, falling back to local TTS")
+                runLocalSpeechSynthesis()
+              }
               audio.src = base64Url
               await audio.play().catch((err) => {
-                console.error("Auto-play Orpheus TTS audio failed:", err)
+                console.warn("Auto-play Orpheus TTS failed, falling back to local TTS:", err)
                 cleanup()
+                runLocalSpeechSynthesis()
               })
             } else {
-              try {
-                if (document.body.contains(audio)) {
-                  document.body.removeChild(audio)
-                }
-              } catch (e) {}
-              if (contextAudioRef.current === audio) {
-                contextAudioRef.current = null
-              }
+              cleanup()
+              console.warn("Orpheus speak request failed, falling back to local TTS")
+              runLocalSpeechSynthesis()
             }
           } catch (err) {
-            console.warn('Groq Orpheus TTS auto-play failed:', err?.response?.status || err.message)
-            try {
-              if (document.body.contains(audio)) {
-                document.body.removeChild(audio)
-              }
-            } catch (e) {}
-            if (contextAudioRef.current === audio) {
-              contextAudioRef.current = null
-            }
+            console.warn('Groq Orpheus TTS auto-play failed, falling back to local TTS:', err?.response?.status || err.message)
+            cleanup()
+            runLocalSpeechSynthesis()
           }
         }
 

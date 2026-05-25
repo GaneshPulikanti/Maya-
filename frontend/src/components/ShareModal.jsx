@@ -37,8 +37,11 @@ export default function ShareModal({ isOpen, onClose, sessionId, sessionTitle })
 
   if (!isOpen) return null
 
-  // Create a clean public-looking shareable link (even though it's local)
-  const shareUrl = `${window.location.origin}/share/${sessionId}`
+  // Create a clean public-looking shareable link targeting the production domain
+  const isLocalDev = window.location.port === '5173' || window.location.hostname === '127.0.0.1' || (window.location.hostname === 'localhost' && window.location.port !== '')
+  const webBaseUrl = isLocalDev ? window.location.origin : 'https://maya-companian.vercel.app'
+  const isGroupChat = sessionTitle?.toLowerCase().includes('group')
+  const shareUrl = `${webBaseUrl}/${isGroupChat ? 'group' : 'share'}/${sessionId}`
 
   const fallbackCopy = (text) => {
     const textarea = document.createElement('textarea')
