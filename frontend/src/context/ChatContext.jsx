@@ -229,7 +229,11 @@ export const ChatProvider = ({ children }) => {
           }
           const filtered = msgs.filter(m => !orphanIds.includes(m.id))
           setMessages(prev => {
-            if (isBackground && prev.length === filtered.length && (filtered.length === 0 || prev[prev.length-1]?.id === filtered[filtered.length-1]?.id)) {
+            const hasChanges = prev.length !== filtered.length || filtered.some((m, idx) => {
+              const p = prev[idx];
+              return !p || p.id !== m.id || p.content !== m.content || p.role !== m.role;
+            });
+            if (isBackground && !hasChanges) {
               return prev;
             }
             const merged = mergeWithPrev(filtered, prev);
@@ -238,7 +242,11 @@ export const ChatProvider = ({ children }) => {
           })
         } else {
           setMessages(prev => {
-            if (isBackground && prev.length === msgs.length && (msgs.length === 0 || prev[prev.length-1]?.id === msgs[msgs.length-1]?.id)) {
+            const hasChanges = prev.length !== msgs.length || msgs.some((m, idx) => {
+              const p = prev[idx];
+              return !p || p.id !== m.id || p.content !== m.content || p.role !== m.role;
+            });
+            if (isBackground && !hasChanges) {
               return prev;
             }
             const merged = mergeWithPrev(msgs, prev);

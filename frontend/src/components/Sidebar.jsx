@@ -310,7 +310,7 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
                                 <div 
                                   key={idx}
                                   title={initial}
-                                  className={`w-5.5 h-5.5 rounded-full border border-wine-900 ${getAvatarColor(initial)} flex items-center justify-center text-[9px] font-bold shadow-sm select-none`}
+                                  className={`w-6 h-6 shrink-0 rounded-full border border-wine-900 ${getAvatarColor(initial)} flex items-center justify-center text-[9px] font-bold shadow-sm select-none`}
                                 >
                                   {initial}
                                 </div>
