@@ -156,7 +156,8 @@ export const ChatProvider = ({ children }) => {
           // On plain page refresh, prefer creating/selecting a fresh "New Conversation"
           // instead of restoring the last-left session. This gives users a new chat
           // when they reload the page (per user request).
-          if (!activeSessionId && !isInitializingRef.current) {
+          // Use activeSessionIdRef.current (not the stale closure) to check if a session is already active
+          if (!activeSessionIdRef.current && !isInitializingRef.current) {
             isInitializingRef.current = true
             createSession("New Conversation").catch(err => {
               // If creating a new session fails for any reason, fall back to first session
