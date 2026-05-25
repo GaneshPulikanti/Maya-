@@ -28,6 +28,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
   const [copiedId, setCopiedId] = useState(null)
   const [isCloning, setIsCloning] = useState(false)
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
+  const [speakingId, setSpeakingId] = useState(null)
 
   const activeAudioRef = useRef(null)
 
