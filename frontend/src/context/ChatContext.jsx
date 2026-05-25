@@ -632,53 +632,7 @@ export const ChatProvider = ({ children }) => {
           document.body.appendChild(audio)
           contextAudioRef.current = audio
 
-          try {
-            const token = localStorage.getItem('token')
-            const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
-            const speakResponse = await api.post(
-              '/api/voice/speak',
-              { text: ttsText, voice: 'diana' },
-              { responseType: 'blob', timeout: 12000, headers }
-            )
-
-            if (speakResponse.status === 200 && speakResponse.data?.size > 0 && contextAudioRef.current === audio) {
-              const base64Url = await new Promise((resolve, reject) => {
-                const reader = new FileReader()
-                reader.readAsDataURL(speakResponse.data)
-                reader.onloadend = () => resolve(reader.result)
-                reader.onerror = reject
-              })
-
-              const cleanup = () => {
-                try {
-                  if (document.body.contains(audio)) {
-                    document.body.removeChild(audio)
-                  }
-                } catch (e) {}
-                if (contextAudioRef.current === audio) {
-                  contextAudioRef.current = null
-                }
-              }
-
-              audio.onended = () => cleanup()
-              audio.onerror = () => cleanup()
-              audio.src = base64Url
-              await audio.play().catch((err) => {
-                console.error("Auto-play Orpheus TTS audio failed:", err)
-                cleanup()
-              })
-            } else {
-              try {
-                if (document.body.contains(audio)) {
-                  document.body.removeChild(audio)
-                }
-              } catch (e) {}
-              if (contextAudioRef.current === audio) {
-                contextAudioRef.current = null
-              }
-            }
-          } catch (err) {
-            console.warn('Groq Orpheus TTS auto-play failed:', err?.response?.status || err.message)
+          const cleanup = () => {
             try {
               if (document.body.contains(audio)) {
                 document.body.removeChild(audio)
@@ -687,6 +641,25 @@ export const ChatProvider = ({ children }) => {
             if (contextAudioRef.current === audio) {
               contextAudioRef.current = null
             }
+          }
+
+          audio.onended = () => cleanup()
+          audio.onerror = () => cleanup()
+
+          try {
+            const token = localStorage.getItem('token') || ''
+            const baseUrl = import.meta.env.VITE_API_URL || api.defaults.baseURL || window.location.origin
+            const cleanBase = baseUrl.replace(/\/+$/, '')
+            const url = `${cleanBase}/api/voice/speak?text=${encodeURIComponent(ttsText)}&voice=diana&token=${token}`
+
+            audio.src = url
+            await audio.play().catch((err) => {
+              console.error("Auto-play Orpheus TTS audio failed:", err)
+              cleanup()
+            })
+          } catch (err) {
+            console.warn('Groq Orpheus TTS auto-play failed:', err.message)
+            cleanup()
           }
         }
 
