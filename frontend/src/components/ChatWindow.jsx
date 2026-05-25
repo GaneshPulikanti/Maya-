@@ -130,10 +130,68 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     // Pre-create and unlock the audio element synchronously in the click callback gesture context
     const audio = new Audio()
     audio.setAttribute("playsinline", "true")
+    audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+    try {
+      audio.play().catch(() => {})
+    } catch (e) {}
     document.body.appendChild(audio)
     activeAudioRef.current = audio
 
-    const cleanup = () => {
+    try {
+      const token = localStorage.getItem('token')
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
+      const res = await api.post(
+        '/api/voice/speak',
+        { text: clean, voice: 'diana' },
+        { responseType: 'blob', timeout: 12000, headers }
+      )
+
+      if (res.status === 200 && res.data?.size > 0 && activeAudioRef.current === audio) {
+        const base64Url = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.readAsDataURL(res.data)
+          reader.onloadend = () => resolve(reader.result)
+          reader.onerror = reject
+        })
+
+        const cleanup = () => {
+          try {
+            if (document.body.contains(audio)) {
+              document.body.removeChild(audio)
+            }
+          } catch (e) {}
+          if (activeAudioRef.current === audio) {
+            activeAudioRef.current = null
+          }
+        }
+
+        audio.onended = () => {
+          cleanup()
+          setSpeakingId(prev => prev === msgId ? null : prev)
+        }
+
+        audio.onerror = (e) => {
+          console.error("Orpheus audio element error:", e)
+          cleanup()
+          setSpeakingId(prev => prev === msgId ? null : prev)
+        }
+
+        audio.src = base64Url
+        await audio.play()
+      } else {
+        // Clean up if it was stopped/changed or response was empty
+        try {
+          if (document.body.contains(audio)) {
+            document.body.removeChild(audio)
+          }
+        } catch (e) {}
+        if (activeAudioRef.current === audio) {
+          activeAudioRef.current = null
+          setSpeakingId(prev => prev === msgId ? null : prev)
+        }
+      }
+    } catch (err) {
+      console.error("Orpheus TTS failed:", err)
       try {
         if (document.body.contains(audio)) {
           document.body.removeChild(audio)
@@ -141,32 +199,8 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       } catch (e) {}
       if (activeAudioRef.current === audio) {
         activeAudioRef.current = null
+        setSpeakingId(prev => prev === msgId ? null : prev)
       }
-    }
-
-    audio.onended = () => {
-      cleanup()
-      setSpeakingId(prev => prev === msgId ? null : prev)
-    }
-
-    audio.onerror = (e) => {
-      console.error("Orpheus audio element error:", e)
-      cleanup()
-      setSpeakingId(prev => prev === msgId ? null : prev)
-    }
-
-    try {
-      const token = localStorage.getItem('token') || ''
-      const baseUrl = import.meta.env.VITE_API_URL || api.defaults.baseURL || window.location.origin
-      const cleanBase = baseUrl.replace(/\/+$/, '')
-      const url = `${cleanBase}/api/voice/speak?text=${encodeURIComponent(clean)}&voice=diana&token=${token}`
-
-      audio.src = url
-      await audio.play()
-    } catch (err) {
-      console.error("Orpheus TTS failed:", err)
-      cleanup()
-      setSpeakingId(prev => prev === msgId ? null : prev)
     }
   }
 

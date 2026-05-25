@@ -47,61 +47,117 @@ function speakText(rawText, onDone, onError) {
 
   let finished = false
   let activeAudio = null
+  let fallbackTimeout = null
 
   const done = () => {
     if (finished) return
     finished = true
+    if (fallbackTimeout) {
+      clearTimeout(fallbackTimeout)
+      fallbackTimeout = null
+    }
     onDone?.()
   }
 
   // Pre-create and unlock the audio element synchronously
   const audio = document.createElement('audio')
   audio.style.display = 'none'
+  audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
   audio.setAttribute("playsinline", "true")
   document.body.appendChild(audio)
+  try {
+    audio.play().catch(() => {})
+  } catch (e) {}
   activeAudio = audio
 
-  const cleanup = () => {
-    try {
-      if (document.body.contains(audio)) {
-        document.body.removeChild(audio)
+  // Set a backup timeout: if Orpheus doesn't load/play within 4.5 seconds, just finish
+  fallbackTimeout = setTimeout(() => {
+    if (!finished && activeAudio && activeAudio.src.startsWith('data:audio/wav')) {
+      console.warn("Orpheus TTS timed out, finishing")
+      try { document.body.removeChild(audio) } catch (e) {}
+      done()
+    }
+  }, 5500)
+
+  api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 12000 })
+    .then(res => {
+      if (finished) {
+        try { document.body.removeChild(audio) } catch (e) {}
+        return
       }
-    } catch (e) {}
-  }
+      if (!res?.data?.size) {
+        try { document.body.removeChild(audio) } catch (e) {}
+        done()
+        return
+      }
 
-  audio.onended = () => {
-    cleanup()
-    activeAudio = null
-    done()
-  }
+      try {
+        const reader = new FileReader()
+        reader.readAsDataURL(res.data)
+        reader.onloadend = () => {
+          if (finished) {
+            try { document.body.removeChild(audio) } catch (e) {}
+            return
+          }
+          const base64Url = reader.result
+          
+          const cleanup = () => {
+            try {
+              if (document.body.contains(audio)) {
+                document.body.removeChild(audio)
+              }
+            } catch (e) {}
+          }
 
-  audio.onerror = (e) => {
-    console.error("Orpheus audio playback error:", e)
-    cleanup()
-    activeAudio = null
-    done()
-  }
+          audio.onended = () => {
+            cleanup()
+            activeAudio = null
+            done()
+          }
 
-  const token = localStorage.getItem('token') || ''
-  const baseUrl = import.meta.env.VITE_API_URL || api.defaults.baseURL || window.location.origin
-  const cleanBase = baseUrl.replace(/\/+$/, '')
-  const url = `${cleanBase}/api/voice/speak?text=${encodeURIComponent(text)}&voice=diana&token=${token}`
+          audio.onerror = (e) => {
+            console.error("Orpheus audio playback error:", e)
+            cleanup()
+            activeAudio = null
+            done()
+          }
 
-  audio.src = url
-  audio.play().catch((err) => {
-    console.error("Orpheus audio play failed:", err)
-    cleanup()
-    activeAudio = null
-    done()
-  })
+          audio.src = base64Url
+          audio.play().catch((err) => {
+            console.error("Orpheus audio play failed:", err)
+            cleanup()
+            activeAudio = null
+            done()
+          })
+        }
+        reader.onerror = () => {
+          try { document.body.removeChild(audio) } catch (e) {}
+          done()
+        }
+      } catch (err) {
+        try { document.body.removeChild(audio) } catch (e) {}
+        done()
+      }
+    })
+    .catch(err => {
+      console.warn("Orpheus TTS request failed", err)
+      try { document.body.removeChild(audio) } catch (e) {}
+      done()
+    })
 
   // Return clean cancellation function
   return () => {
     finished = true
+    if (fallbackTimeout) {
+      clearTimeout(fallbackTimeout)
+      fallbackTimeout = null
+    }
     if (activeAudio) {
       try {
         activeAudio.pause()
+        activeAudio.currentTime = 0
         activeAudio.src = ''
+        activeAudio.load()
         if (document.body.contains(activeAudio)) {
           document.body.removeChild(activeAudio)
         }
