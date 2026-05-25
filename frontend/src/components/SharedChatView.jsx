@@ -13,39 +13,6 @@ const api = axios.create({
   }
 })
 
-const TypewriterWrapper = ({ messageId, fullText, onComplete, onType, children }) => {
-  const [typedText, setTypedText] = useState("");
-  const wordsRef = useRef([]);
-  const indexRef = useRef(0);
-
-  useEffect(() => {
-    const words = fullText.split(/(\s+)/);
-    wordsRef.current = words.filter(w => w.length > 0);
-    indexRef.current = 0;
-    setTypedText("");
-
-    let timer;
-    const typeNext = () => {
-      if (indexRef.current < wordsRef.current.length) {
-        const nextWords = wordsRef.current.slice(0, indexRef.current + 1).join("");
-        setTypedText(nextWords);
-        indexRef.current += 1;
-        if (onType) onType();
-        const remaining = wordsRef.current.length - indexRef.current;
-        const delay = remaining > 30 ? 10 : 35;
-        timer = setTimeout(typeNext, delay);
-      } else {
-        onComplete();
-      }
-    };
-
-    timer = setTimeout(typeNext, 30);
-    return () => clearTimeout(timer);
-  }, [fullText, messageId, onComplete, onType]);
-
-  return children(typedText);
-};
-
 export default function SharedChatView({ sessionId, onBackToApp }) {
   const { user } = useAuth()
   const isGroupChat = window.location.pathname.startsWith('/group')
@@ -378,6 +345,40 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
 
 
+  const TypewriterText = ({ text, onComplete }) => {
+    const [displayedText, setDisplayedText] = useState("")
+
+    useEffect(() => {
+      const words = text.split(" ")
+      let currentText = ""
+      let wordIdx = 0
+
+      const intervalId = setInterval(() => {
+        if (wordIdx < words.length) {
+          currentText += (wordIdx === 0 ? "" : " ") + words[wordIdx]
+          setDisplayedText(currentText)
+          wordIdx++
+          scrollToBottom('smooth')
+        } else {
+          clearInterval(intervalId)
+          if (typeof onComplete === 'function') {
+            onComplete()
+          }
+        }
+      }, 30)
+
+      return () => {
+        clearInterval(intervalId)
+      }
+    }, [text])
+
+    return (
+      <>
+        {formatText(displayedText)}
+      </>
+    )
+  }
+
   const renderMessage = (msg) => {
     if (msg.role === 'assistant' && !msg.content) {
       return (
@@ -397,6 +398,11 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
     let hasVersions = false
     let vd = null
+    const isMsgNew = msg.role === 'assistant' && 
+                     msg.id &&
+                     !msg.id.toString().startsWith('vhist-') &&
+                     !typedMessageIdsRef.current.has(msg.id) && 
+                     (new Date() - new Date(msg.created_at) < 15000)
     const originalContent = msg._originalContent || msg.content
     if (originalContent && originalContent.startsWith('{"versions":')) {
       try {
@@ -451,24 +457,18 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             <div className={`text-[10px] font-bold uppercase tracking-wider mb-1 select-none ${isUser ? 'text-rose-300' : 'text-rose-400'}`}>
               {displayName}
             </div>
-            {(() => {
-              const isMsgNew = !isUser && msg.role === 'assistant' && msg.id && !msg.id.toString().startsWith('vhist-') && !typedMessageIdsRef.current.has(msg.id) && (new Date() - new Date(msg.created_at) < 15000);
-              if (isMsgNew) {
-                return (
-                  <TypewriterWrapper
-                    messageId={msg.id}
-                    fullText={cleanContent}
-                    onComplete={() => {
-                      typedMessageIdsRef.current.add(msg.id)
-                    }}
-                    onType={() => scrollToBottom('smooth')}
-                  >
-                    {(typedContent) => formatText(typedContent)}
-                  </TypewriterWrapper>
-                )
-              }
-              return formatText(cleanContent);
-            })()}
+            {isMsgNew ? (
+              <TypewriterText 
+                text={cleanContent} 
+                onComplete={() => {
+                  if (msg.id) {
+                    typedMessageIdsRef.current.add(msg.id)
+                  }
+                }} 
+              />
+            ) : (
+              formatText(cleanContent)
+            )}
 
             {hasVersions && (
               <div className="flex items-center gap-0.5 mt-2 select-none justify-end">

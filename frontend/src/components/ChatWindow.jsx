@@ -18,39 +18,6 @@ const VocalIcon = ({ isMoving = false, className = "w-5 h-5 text-wine-900" }) =>
   )
 }
 
-const TypewriterWrapper = ({ messageId, fullText, onComplete, onType, children }) => {
-  const [typedText, setTypedText] = useState("");
-  const wordsRef = useRef([]);
-  const indexRef = useRef(0);
-
-  useEffect(() => {
-    const words = fullText.split(/(\s+)/);
-    wordsRef.current = words.filter(w => w.length > 0);
-    indexRef.current = 0;
-    setTypedText("");
-
-    let timer;
-    const typeNext = () => {
-      if (indexRef.current < wordsRef.current.length) {
-        const nextWords = wordsRef.current.slice(0, indexRef.current + 1).join("");
-        setTypedText(nextWords);
-        indexRef.current += 1;
-        if (onType) onType();
-        const remaining = wordsRef.current.length - indexRef.current;
-        const delay = remaining > 30 ? 10 : 35;
-        timer = setTimeout(typeNext, delay);
-      } else {
-        onComplete();
-      }
-    };
-
-    timer = setTimeout(typeNext, 30);
-    return () => clearTimeout(timer);
-  }, [fullText, messageId, onComplete, onType]);
-
-  return children(typedText);
-};
-
 export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   const {
     activeSessionId,
@@ -1133,6 +1100,42 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     return { hasReply: false, cleanContent: content, prefix: "" }
   }
 
+  const TypewriterText = ({ text, onComplete }) => {
+    const [displayedText, setDisplayedText] = useState("")
+
+    useEffect(() => {
+      const words = text.split(" ")
+      let currentText = ""
+      let wordIdx = 0
+
+      const intervalId = setInterval(() => {
+        if (wordIdx < words.length) {
+          currentText += (wordIdx === 0 ? "" : " ") + words[wordIdx]
+          setDisplayedText(currentText)
+          wordIdx++
+          if (isAutoScrollingRef.current) {
+            scrollToBottom('smooth')
+          }
+        } else {
+          clearInterval(intervalId)
+          if (typeof onComplete === 'function') {
+            onComplete()
+          }
+        }
+      }, 30)
+
+      return () => {
+        clearInterval(intervalId)
+      }
+    }, [text])
+
+    return (
+      <>
+        {renderMessageText(displayedText)}
+      </>
+    )
+  }
+
   // Split rendering for Assistant response containing blocks
   const renderAssistantMessage = (msg) => {
     if (!msg.content) {
@@ -1146,6 +1149,13 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
         </div>
       )
     }
+
+    const isMsgNew = msg.role === 'assistant' && 
+                     !msg.isLocal && 
+                     msg.id &&
+                     !msg.id.toString().startsWith('vhist-') &&
+                     !typedMessageIdsRef.current.has(msg.id) && 
+                     (new Date() - new Date(msg.created_at) < 15000)
 
     const replyData = renderReplyQuote(msg.content)
     const blocks = parseAIResponse(replyData.cleanContent)
@@ -1162,7 +1172,18 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
                 key={idx}
                 className="px-4 py-3 rounded-2xl rounded-tl-none text-base leading-relaxed font-sans bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 shadow-md shadow-rose-500/5 w-full"
               >
-                {renderMessageText(block.content)}
+                {isMsgNew ? (
+                  <TypewriterText 
+                    text={block.content} 
+                    onComplete={() => {
+                      if (msg.id) {
+                        typedMessageIdsRef.current.add(msg.id)
+                      }
+                    }} 
+                  />
+                ) : (
+                  renderMessageText(block.content)
+                )}
               </div>
             )
           } else if (block.type === 'code') {
@@ -1525,28 +1546,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
                 >
                   {/* Bubble Content Wrapper */}
                   <div className="w-full">
-                    {(() => {
-                      const isMsgNew = !isUser && msg.role === 'assistant' && !msg.isLocal && msg.id && !msg.id.toString().startsWith('vhist-') && !typedMessageIdsRef.current.has(msg.id) && (new Date() - new Date(msg.created_at) < 15000);
-                      if (isMsgNew) {
-                        return (
-                          <TypewriterWrapper
-                            messageId={msg.id}
-                            fullText={msg.content}
-                            onComplete={() => {
-                              typedMessageIdsRef.current.add(msg.id)
-                            }}
-                            onType={() => {
-                              if (isAutoScrollingRef.current) {
-                                scrollToBottom('smooth')
-                              }
-                            }}
-                          >
-                            {(typedContent) => renderAssistantMessage({ ...msg, content: typedContent })}
-                          </TypewriterWrapper>
-                        )
-                      }
-                      return isUser ? renderUserMessage(msg) : renderAssistantMessage(msg);
-                    })()}
+                    {isUser ? renderUserMessage(msg) : renderAssistantMessage(msg)}
                   </div>
                   
                   <span className={`text-[10px] text-butter-300 font-light mt-1.5 font-sans flex items-center gap-1.5 select-none w-full ${isUser ? 'justify-end pr-1' : 'justify-start pl-1'}`}>

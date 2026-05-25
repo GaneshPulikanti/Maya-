@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { X, Loader2, Heart, AlertCircle } from 'lucide-react'
-import { api } from '../context/AuthContext'
+import { api, useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 
 // ─── Capacitor Audio Plugin (Android native recording fallback) ──────────────
@@ -196,7 +196,8 @@ const VocalIconLarge = ({ isMoving = false, color = "#9e0232" }) => {
 
 // ─── VoiceMode component ─────────────────────────────────────────────────────
 export default function VoiceMode({ isOpen, onClose }) {
-  const { sendMessage, messages, isStreaming } = useChat()
+  const { sendMessage, messages, isStreaming, sessions, activeSessionId } = useChat()
+  const { user } = useAuth()
 
   const [phase, setPhase] = useState(PHASE.IDLE)
   const [transcript, setTrans] = useState('')
@@ -587,7 +588,15 @@ export default function VoiceMode({ isOpen, onClose }) {
       prevStreamingRef.current = false
       waitingRef.current = true
 
-      sendMessage(spoken, true)
+      let finalSpoken = spoken
+      const activeSess = sessions?.find(s => s.id === activeSessionId)
+      const isGroup = activeSess?.title?.toLowerCase().includes('group')
+      if (isGroup && user?.email) {
+        const senderName = user.email.split('@')[0]
+        finalSpoken = `[${senderName}]: ${spoken}`
+      }
+
+      sendMessage(finalSpoken, true)
       // Phase stays 'processing' — the isStreaming useEffect will move to 'speaking'
     } catch (err) {
       if (!isOpenRef.current || abortRecRef.current) return;
