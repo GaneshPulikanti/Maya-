@@ -34,7 +34,6 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
   const activeAudioRef = useRef(null)
   const messagesEndRef = useRef(null)
-  const typedMessageIdsRef = useRef(new Set())
 
   const sortedMessages = useMemo(() => {
     return [...(session?.messages || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
@@ -341,39 +340,6 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
 
 
-  const TypewriterText = ({ text, onComplete }) => {
-    const [displayedText, setDisplayedText] = useState("")
-
-    useEffect(() => {
-      const words = text.split(" ")
-      let currentText = ""
-      let wordIdx = 0
-
-      const intervalId = setInterval(() => {
-        if (wordIdx < words.length) {
-          currentText += (wordIdx === 0 ? "" : " ") + words[wordIdx]
-          setDisplayedText(currentText)
-          wordIdx++
-        } else {
-          clearInterval(intervalId)
-          if (typeof onComplete === 'function') {
-            onComplete()
-          }
-        }
-      }, 30)
-
-      return () => {
-        clearInterval(intervalId)
-      }
-    }, [text])
-
-    return (
-      <>
-        {formatText(displayedText)}
-      </>
-    )
-  }
-
   const renderMessage = (msg) => {
     if (msg.role === 'assistant' && !msg.content) {
       return (
@@ -393,11 +359,6 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
     let hasVersions = false
     let vd = null
-    const isMsgNew = msg.role === 'assistant' && 
-                     !msg.isLocal && 
-                     msg.id &&
-                     !typedMessageIdsRef.current.has(msg.id) && 
-                     (new Date() - new Date(msg.created_at) < 15000)
     const originalContent = msg._originalContent || msg.content
     if (originalContent && originalContent.startsWith('{"versions":')) {
       try {
@@ -452,18 +413,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             <div className={`text-[10px] font-bold uppercase tracking-wider mb-1 select-none ${isUser ? 'text-rose-300' : 'text-rose-400'}`}>
               {displayName}
             </div>
-            {isMsgNew ? (
-              <TypewriterText 
-                text={cleanContent} 
-                onComplete={() => {
-                  if (msg.id) {
-                    typedMessageIdsRef.current.add(msg.id)
-                  }
-                }} 
-              />
-            ) : (
-              formatText(cleanContent)
-            )}
+            {formatText(cleanContent)}
 
             {hasVersions && (
               <div className="flex items-center gap-0.5 mt-2 select-none justify-end">

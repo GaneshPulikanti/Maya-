@@ -107,9 +107,9 @@ export const ChatProvider = ({ children }) => {
   }
 
   // Fetch session listings
-  const fetchSessions = async (isBackground = false) => {
+  const fetchSessions = async () => {
     if (!token) return
-    if (!isBackground) setLoadingSessions(true)
+    setLoadingSessions(true)
     try {
       const response = await api.get('/api/chat/sessions')
       setSessions(response.data)
@@ -274,9 +274,6 @@ export const ChatProvider = ({ children }) => {
       const intervalDelay = isGroup ? 1000 : 2000
       intervalId = setInterval(() => {
         fetchMessages(activeSessionId, true)
-        if (isGroup) {
-          fetchSessions(true)
-        }
       }, intervalDelay)
     }
     return () => {

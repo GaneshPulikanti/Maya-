@@ -44,30 +44,18 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
     const msgs = (sessionsMessages && sessionsMessages[session.id]) || []
     const participants = new Set()
     
-    // 1. Add all registered participants from session object
-    if (session.participants && Array.isArray(session.participants)) {
-      session.participants.forEach(email => {
-        if (email) {
-          participants.add(email.toLowerCase())
-        }
-      })
+    if (user?.email) {
+      participants.add(user.email.split('@')[0])
     }
-    
-    // 2. Add senders from messages
+
     msgs.forEach(msg => {
       if (msg.role === 'user' && msg.content) {
         const nameMatch = msg.content.match(/^\[Reply to:[^\]]*\]\s*\[(.*?)\]:\s*(.*)$/s) || msg.content.match(/^\[(.*?)\]:\s*(.*)$/s)
         if (nameMatch) {
-          const senderName = nameMatch[1].trim()
-          participants.add(senderName.toLowerCase())
+          participants.add(nameMatch[1])
         }
       }
     })
-
-    // If there is only 1 participant (which would be the creator), and it is a group chat, return empty array (don't show any icons)
-    if (participants.size <= 1) {
-      return []
-    }
 
     const initialsList = Array.from(participants).map(name => {
       const cleanName = name.includes('@') ? name.split('@')[0] : name
@@ -89,7 +77,8 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
       return (text || cleanName || 'U').substring(0, 2).toUpperCase()
     })
 
-    return Array.from(new Set(initialsList))
+    const uniqueInitials = Array.from(new Set(initialsList))
+    return uniqueInitials.length > 0 ? uniqueInitials : [user?.email ? user.email[0].toUpperCase() : 'U']
   }
 
   useEffect(() => {
