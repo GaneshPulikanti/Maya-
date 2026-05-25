@@ -127,8 +127,8 @@ export const ChatProvider = ({ children }) => {
         })
       } else if (continueSharedId) {
         sessionStorage.removeItem('continue_shared_session_id')
-        joinSession(continueSharedId).catch(err => {
-          console.error("Failed to auto-join shared session on login:", err)
+        cloneSession(continueSharedId).catch(err => {
+          console.error("Failed to auto-clone shared session on login:", err)
         })
       } else if (sharedSessionId) {
         // If they already joined this session, select it and show dashboard, otherwise show read-only view
@@ -269,14 +269,17 @@ export const ChatProvider = ({ children }) => {
   useEffect(() => {
     let intervalId;
     if (activeSessionId && !isStreaming && !showSharedViewOnly) {
+      const activeSess = sessions.find(s => s.id === activeSessionId)
+      const isGroup = activeSess?.title?.toLowerCase().includes('group')
+      const intervalDelay = isGroup ? 1000 : 2000
       intervalId = setInterval(() => {
         fetchMessages(activeSessionId, true)
-      }, 2000)
+      }, intervalDelay)
     }
     return () => {
       if (intervalId) clearInterval(intervalId)
     }
-  }, [activeSessionId, isStreaming, showSharedViewOnly])
+  }, [activeSessionId, isStreaming, showSharedViewOnly, sessions])
 
   // Reload sessions on auth
   useEffect(() => {
@@ -352,6 +355,9 @@ export const ChatProvider = ({ children }) => {
     if (token) {
       if (showSharedViewOnly) return
 
+      const pathParts = window.location.pathname.split('/')
+      const isSharedOrGroup = pathParts[1] === 'share' || pathParts[1] === 'group'
+
       if (activeSessionId) {
         const activeSess = sessions.find(s => s.id === activeSessionId)
         let expectedPath = `/chat/${activeSessionId}`
@@ -368,7 +374,7 @@ export const ChatProvider = ({ children }) => {
           window.history.pushState({}, '', expectedPath)
         }
       } else {
-        if (window.location.pathname !== '/') {
+        if (!isSharedOrGroup && window.location.pathname !== '/') {
           window.history.pushState({}, '', '/')
         }
       }

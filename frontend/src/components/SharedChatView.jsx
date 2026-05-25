@@ -310,11 +310,17 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     if (user) {
       setIsCloning(true)
       try {
-        if (chatContext?.joinSession) {
-          await chatContext.joinSession(sessionId)
+        if (isGroupChat) {
+          if (chatContext?.joinSession) {
+            await chatContext.joinSession(sessionId)
+          }
+        } else {
+          if (chatContext?.cloneSession) {
+            await chatContext.cloneSession(sessionId)
+          }
         }
       } catch (err) {
-        alert(`Failed to ${isGroupChat ? 'join' : 'continue'} conversation: ` + (err.message || err))
+        alert(`Failed to ${isGroupChat ? 'join' : 'copy'} conversation: ` + (err.message || err))
       } finally {
         setIsCloning(false)
       }
@@ -489,7 +495,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
         <div className="flex items-center gap-2">
           <Loader2 className="w-4 h-4 text-rose-400 animate-spin" />
           <span className="text-sm font-sans tracking-wide font-light">
-            {isGroupChat ? "Joining group chat room..." : "Connecting to shared conversation..."}
+            {isGroupChat ? "Joining group chat room..." : "Cloning conversation..."}
           </span>
         </div>
       </div>
@@ -651,7 +657,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
           className="px-5 py-2.5 rounded-xl font-bold font-sans text-xs bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500 text-white hover:scale-102 active:scale-98 transition-all duration-300 flex items-center gap-2 shadow-[0_0_20px_rgba(158, 2, 50, 0.35)] cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
         >
           <span className="text-white font-bold">
-            {isCloning ? "Cloning..." : (isGroupChat ? "Join Chat" : "Continue Chat")}
+            {isCloning ? (isGroupChat ? "Joining..." : "Cloning...") : (isGroupChat ? "Join Chat" : "Continue Chat")}
           </span>
           <ArrowRight className="w-4 h-4 text-white" />
         </button>

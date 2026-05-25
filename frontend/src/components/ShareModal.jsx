@@ -62,14 +62,13 @@ export default function ShareModal({ isOpen, onClose, sessionId, sessionTitle })
   }
 
   const handleCopyLink = async () => {
-    const textToCopy = isGroupChat ? `Join Chat: ${shareUrl}` : `Continue Chat: ${shareUrl}`
     try {
-      await navigator.clipboard.writeText(textToCopy)
+      await navigator.clipboard.writeText(shareUrl)
       setCopiedLink(true)
       setTimeout(() => setCopiedLink(false), 2000)
     } catch (err) {
       // fallback for insecure contexts (e.g., mobile via IP)
-      fallbackCopy(textToCopy)
+      fallbackCopy(shareUrl)
     }
   }
 
@@ -176,12 +175,14 @@ export default function ShareModal({ isOpen, onClose, sessionId, sessionTitle })
 
             {/* Link Sharing Panel */}
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-butter-200 uppercase tracking-wider">Shareable Chat Link</label>
+              <label className="text-xs font-semibold text-butter-200 uppercase tracking-wider">
+                {isGroupChat ? "Join Group Chat Link" : "Shareable Chat Link"}
+              </label>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   readOnly
-                  value={isGroupChat ? `Join Chat: ${shareUrl}` : `Continue Chat: ${shareUrl}`}
+                  value={shareUrl}
                   className="flex-1 text-sm font-mono font-semibold rounded-xl px-3 py-2.5 bg-wine-900 border border-wine-700 text-butter-50 shadow-sm focus:outline-none"
                 />
                 <button
