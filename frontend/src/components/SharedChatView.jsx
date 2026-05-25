@@ -52,14 +52,14 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             const vd = JSON.parse(msg.content)
             const currentIdx = localVersions[msg.id] !== undefined ? localVersions[msg.id] : (vd.current || 0)
             const currentPair = vd.versions[currentIdx]
-            
+
             result.push({ ...msg, content: currentPair.user, _originalContent: msg.content })
-            
+
             const nextMsg = sortedMessages[i + 1]
             if (nextMsg && nextMsg.role === 'assistant') {
               skipIds.add(nextMsg.id)
             }
-            
+
             if (currentPair.assistant) {
               result.push({
                 id: `vhist-${msg.id}-${currentIdx}`,
@@ -87,7 +87,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       const data = JSON.parse(currentContent)
       const currentIdx = localVersions[msgId] !== undefined ? localVersions[msgId] : (data.current || 0)
       const newIdx = Math.max(0, Math.min(data.versions.length - 1, currentIdx + direction))
-      
+
       setLocalVersions(prev => ({ ...prev, [msgId]: newIdx }))
 
       const token = localStorage.getItem('token')
@@ -96,7 +96,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
           ...data,
           current: newIdx
         })
-        const headers = { 
+        const headers = {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
@@ -117,14 +117,14 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
           if (document.body.contains(activeAudioRef.current)) {
             document.body.removeChild(activeAudioRef.current)
           }
-        } catch (e) {}
+        } catch (e) { }
         activeAudioRef.current = null
       }
       try {
         if (window.speechSynthesis) {
           window.speechSynthesis.cancel()
         }
-      } catch (e) {}
+      } catch (e) { }
       setSpeakingId(null)
       return
     }
@@ -136,15 +136,15 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
         if (document.body.contains(activeAudioRef.current)) {
           document.body.removeChild(activeAudioRef.current)
         }
-      } catch (e) {}
+      } catch (e) { }
       activeAudioRef.current = null
     }
     try {
       if (window.speechSynthesis) {
         window.speechSynthesis.cancel()
       }
-    } catch (e) {}
-    
+    } catch (e) { }
+
     // Clean markdown and formatting
     const clean = text
       .replace(/\*+/g, '') // bold/italic
@@ -167,8 +167,8 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     audio.setAttribute("playsinline", "true")
     audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
     try {
-      audio.play().catch(() => {})
-    } catch (e) {}
+      audio.play().catch(() => { })
+    } catch (e) { }
     document.body.appendChild(audio)
     activeAudioRef.current = audio
 
@@ -177,7 +177,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
         if (document.body.contains(audio)) {
           document.body.removeChild(audio)
         }
-      } catch (e) {}
+      } catch (e) { }
       if (activeAudioRef.current === audio) {
         activeAudioRef.current = null
       }
@@ -280,7 +280,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     if (isMobileBrowser && sessionId) {
       const scheme = "org.maya.companion"
       const appUrl = `${scheme}://${isGroupChat ? 'group' : 'share'}/${sessionId}`
-      
+
       // Attempt redirection to the app URL scheme
       window.location.href = appUrl
     }
@@ -358,7 +358,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       try {
         vd = JSON.parse(originalContent)
         hasVersions = vd.versions?.length > 1
-      } catch (e) {}
+      } catch (e) { }
     }
     const currentIdx = vd ? (localVersions[msg.id] !== undefined ? localVersions[msg.id] : vd.current) : 0
 
@@ -366,13 +366,13 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       let tempContent = msg.content;
       const imgPrefix = tempContent.match(/^\[Look at this image:[^\]]*\]\s*/)?.[0] || '';
       tempContent = tempContent.replace(/^\[Look at this image:[^\]]*\]\s*/, '');
-      
+
       const filePrefix = tempContent.match(/^\[Look at this file:[^\]]*\]\s*/)?.[0] || '';
       tempContent = tempContent.replace(/^\[Look at this file:[^\]]*\]\s*/, '');
-      
+
       const replyPrefix = tempContent.match(/^\[Reply to:[^\]]*\]\s*/)?.[0] || '';
       tempContent = tempContent.replace(/^\[Reply to:[^\]]*\]\s*/, '');
-      
+
       const nameMatch = tempContent.match(/^\[(.*?)\]:\s*(.*)$/s);
       if (nameMatch) {
         displayName = nameMatch[1]
@@ -392,18 +392,16 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     return (
       <div
         key={msg.client_id || msg.id}
-        className={`flex flex-col max-w-[85%] transition-all duration-300 rounded-2xl ${msg.isLocal ? 'animate-bubble-entry' : ''} ${
-          isUser ? 'self-end items-end w-full' : 'self-start items-start w-full'
-        }`}
+        className={`flex flex-col max-w-[85%] transition-all duration-300 rounded-2xl ${msg.isLocal ? 'animate-bubble-entry' : ''} ${isUser ? 'self-end items-end w-full' : 'self-start items-start w-full'
+          }`}
       >
         {/* Bubble content */}
         <div className="w-full flex flex-col min-w-0">
           <div
-            className={`px-4 py-3 rounded-2xl text-base leading-relaxed font-sans shadow-md text-left w-full ${
-              isUser
+            className={`px-4 py-3 rounded-2xl text-base leading-relaxed font-sans shadow-md text-left w-full ${isUser
                 ? 'bg-wine-900 border border-rose-500/10 text-butter-100 rounded-tr-none font-light tracking-wide'
                 : 'bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 rounded-tl-none shadow-rose-500/5'
-            }`}
+              }`}
           >
             {/* Display custom sender name tag inside bubble */}
             <div className={`text-[10px] font-bold uppercase tracking-wider mb-1 select-none ${isUser ? 'text-rose-300' : 'text-rose-400'}`}>
@@ -467,9 +465,8 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
           <span className="text-[8px]">•</span>
           <button
             onClick={() => speakMessageText(cleanContent, msg.id)}
-            className={`hover:text-rose-300 transition-colors flex items-center gap-0.5 active:scale-95 ${
-              speakingId === msg.id ? 'text-rose-300 font-medium' : ''
-            }`}
+            className={`hover:text-rose-300 transition-colors flex items-center gap-0.5 active:scale-95 ${speakingId === msg.id ? 'text-rose-300 font-medium' : ''
+              }`}
             title={speakingId === msg.id ? "Stop reading" : "Read aloud"}
           >
             {speakingId === msg.id ? (
@@ -579,7 +576,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       </header>
 
       {/* Shared Conversation Transcript Body */}
-      <div 
+      <div
         onClick={handleChatClick}
         className={`flex-1 overflow-y-auto px-4 py-8 md:px-8 space-y-6 w-full max-w-4xl mx-auto flex flex-col ${!user ? 'cursor-pointer' : ''}`}
       >
@@ -592,8 +589,8 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             {title}
           </h1>
           <p className="text-xs text-butter-300 font-light tracking-wide max-w-md">
-            {isGroupChat 
-              ? "Multiple users can chat in this shared room together. Maya responds contextually to everyone using the host's Mind Space!" 
+            {isGroupChat
+              ? "Multiple users can chat in this shared room together. Maya responds contextually to everyone using the host's Mind Space!"
               : "This conversation log with Maya has been shared with you. You are viewing a read-only snapshot."}
           </p>
         </div>
@@ -606,25 +603,25 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             </div>
           ) : (
             <>
-            {displayMessages.map((msg) => renderMessage(msg))}
-            
-            {/* Global Typing Indicator for Group Chat Sync */}
-            {messages.length > 0 && messages[messages.length - 1].role === 'user' && (
-              <div className="flex flex-col max-w-[85%] transition-all duration-300 rounded-2xl self-start items-start w-full animate-bubble-entry">
-                <div className="w-full flex flex-col min-w-0">
-                  <div className="px-4 py-3 rounded-2xl text-base leading-relaxed font-sans shadow-md text-left w-max bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 rounded-tl-none shadow-rose-500/5">
-                    <div className="text-[10px] font-bold uppercase tracking-wider mb-1 select-none text-rose-400">
-                      Maya
-                    </div>
-                    <div className="flex gap-1.5 items-center py-2">
-                      <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
-                      <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
-                      <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+              {displayMessages.map((msg) => renderMessage(msg))}
+
+              {/* Global Typing Indicator for Group Chat Sync */}
+              {messages.length > 0 && messages[messages.length - 1].role === 'user' && (
+                <div className="flex flex-col max-w-[85%] transition-all duration-300 rounded-2xl self-start items-start w-full animate-bubble-entry">
+                  <div className="w-full flex flex-col min-w-0">
+                    <div className="px-4 py-3 rounded-2xl text-base leading-relaxed font-sans shadow-md text-left w-max bg-rose-500/5 backdrop-blur-xs border border-rose-500/20 text-butter-100 rounded-tl-none shadow-rose-500/5">
+                      <div className="text-[10px] font-bold uppercase tracking-wider mb-1 select-none text-rose-400">
+                        Maya
+                      </div>
+                      <div className="flex gap-1.5 items-center py-2">
+                        <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+                        <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+                        <span className="w-2 h-2 rounded-full bg-rose-300 typing-dot" />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
             </>
           )}
 
