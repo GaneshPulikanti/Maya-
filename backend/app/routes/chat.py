@@ -162,12 +162,18 @@ async def list_sessions(
     now = datetime.now(timezone.utc)
     any_deleted = False
     
-    # 2. Identify empty/uninitialized sessions and delete them if older than 30 seconds
-    for session in sessions:
-        msg_count_stmt = select(func.count(ChatMessage.id)).where(ChatMessage.session_id == session.id)
-        msg_count_res = await db.execute(msg_count_stmt)
-        msg_count = msg_count_res.scalar() or 0
+    # 2. Get message count for all user's sessions in a single query to identify empty ones
+    session_ids = [s.id for s in sessions]
+    msg_counts = {}
+    if session_ids:
+        count_stmt = select(ChatMessage.session_id, func.count(ChatMessage.id)).where(
+            ChatMessage.session_id.in_(session_ids)
+        ).group_by(ChatMessage.session_id)
+        count_res = await db.execute(count_stmt)
+        msg_counts = {r[0]: r[1] for r in count_res.all()}
         
+    for session in sessions:
+        msg_count = msg_counts.get(session.id, 0)
         if msg_count == 0:
             created_at = session.created_at
             if created_at.tzinfo is None:
@@ -273,14 +279,31 @@ async def list_sessions(
         result = await db.execute(stmt)
         sessions = result.scalars().all()
         
+    # Pre-fetch all user emails and joined participants in bulk to avoid N+1 queries
+    session_ids = [s.id for s in sessions]
+    owner_ids = list(set(s.user_id for s in sessions))
+    owner_emails = {}
+    if owner_ids:
+        owner_stmt = select(User.id, User.email).where(User.id.in_(owner_ids))
+        owner_res = await db.execute(owner_stmt)
+        owner_emails = {r[0]: r[1] for r in owner_res.all()}
+        
+    joined_emails_by_session = {}
+    if session_ids:
+        joined_stmt = select(JoinedSession.session_id, User.email).join(User, JoinedSession.user_id == User.id).where(
+            JoinedSession.session_id.in_(session_ids)
+        )
+        joined_res = await db.execute(joined_stmt)
+        for s_id, email in joined_res.all():
+            if s_id not in joined_emails_by_session:
+                joined_emails_by_session[s_id] = []
+            joined_emails_by_session[s_id].append(email)
+
     response_sessions = []
     for session in sessions:
-        owner = await db.get(User, session.user_id)
-        participants = [owner.email] if owner else []
-        
-        join_stmt = select(User.email).join(JoinedSession, JoinedSession.user_id == User.id).where(JoinedSession.session_id == session.id)
-        join_res = await db.execute(join_stmt)
-        joined_emails = join_res.scalars().all()
+        owner_email = owner_emails.get(session.user_id)
+        participants = [owner_email] if owner_email else []
+        joined_emails = joined_emails_by_session.get(session.id, [])
         participants.extend(joined_emails)
         
         response_sessions.append({

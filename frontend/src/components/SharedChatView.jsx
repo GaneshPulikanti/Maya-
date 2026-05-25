@@ -59,10 +59,6 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       setSpeakingId(null)
       return
     }
-
-    try {
-      window.speechSynthesis.cancel()
-    } catch (e) {}
     
     // Clean markdown and formatting
     const clean = text
@@ -75,6 +71,8 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
       .replace(/👥|❤️|✨|😊|💕|🌸|👋/g, '') // remove emojis
       .trim()
       .slice(0, 400);
+
+    if (!clean) return
 
     const utterance = new SpeechSynthesisUtterance(clean)
     utterance.lang = 'en-US' // Explicitly set language for Android WebView support
@@ -106,11 +104,23 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     }
 
     setSpeakingId(msgId)
-    try {
-      window.speechSynthesis.speak(utterance)
-    } catch (err) {
-      console.error("SpeechSynthesis speak failed:", err)
-      setSpeakingId(prev => prev === msgId ? null : prev)
+
+    const doSpeak = () => {
+      try {
+        window.speechSynthesis.speak(utterance)
+      } catch (err) {
+        console.error("SpeechSynthesis speak failed:", err)
+        setSpeakingId(prev => prev === msgId ? null : prev)
+      }
+    }
+
+    if (window.speechSynthesis.speaking) {
+      try {
+        window.speechSynthesis.cancel()
+      } catch (e) {}
+      setTimeout(doSpeak, 100)
+    } else {
+      doSpeak()
     }
   }
 

@@ -62,7 +62,7 @@ function speakText(rawText, onDone, onError) {
   }
 
   const runSpeechSynthesis = () => {
-    if (finished || usingSpeechSynthesis) return
+    if (finished) return
     usingSpeechSynthesis = true
     if (fallbackTimeout) {
       clearTimeout(fallbackTimeout)
@@ -70,13 +70,11 @@ function speakText(rawText, onDone, onError) {
     }
 
     if (!window.speechSynthesis) {
-      onError?.("Web Speech API is not supported on this device.")
-      done()
+      runOrpheusFallback()
       return
     }
 
     try {
-      window.speechSynthesis.cancel()
       utter = new SpeechSynthesisUtterance(text)
       utter.lang = 'en-US' // Explicitly set language for Android TTS
       utter.rate = 1.05
@@ -85,8 +83,11 @@ function speakText(rawText, onDone, onError) {
       utter.onend = done
       utter.onerror = (e) => {
         console.error("SpeechSynthesis utterance error:", e)
-        onError?.("Text-to-speech error: " + (e.error || e.message || "synthesis failed"))
-        done()
+        if (!finished && !activeAudio) {
+          runOrpheusFallback()
+        } else {
+          done()
+        }
       }
 
       const go = () => {
@@ -103,7 +104,22 @@ function speakText(rawText, onDone, onError) {
             ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
             if (femaleVoice) utter.voice = femaleVoice
           }
-          window.speechSynthesis.speak(utter)
+          
+          const doSpeak = () => {
+            try {
+              window.speechSynthesis.speak(utter)
+            } catch (err) {
+              console.error("SpeechSynthesis failed, trying Orpheus:", err)
+              runOrpheusFallback()
+            }
+          }
+
+          if (window.speechSynthesis.speaking) {
+            try { window.speechSynthesis.cancel() } catch (e) {}
+            setTimeout(doSpeak, 100)
+          } else {
+            doSpeak()
+          }
         }
       }
 
@@ -115,102 +131,100 @@ function speakText(rawText, onDone, onError) {
         setTimeout(go, 250)
       }
     } catch (err) {
-      console.error("SpeechSynthesis failed:", err)
-      done()
+      console.error("SpeechSynthesis failed, trying Orpheus:", err)
+      runOrpheusFallback()
     }
   }
 
-  // Set a backup timeout: if Orpheus doesn't load/play within 4.5 seconds, fall back to SpeechSynthesis
-  fallbackTimeout = setTimeout(() => {
-    if (!finished && !activeAudio && !usingSpeechSynthesis) {
-      console.warn("Orpheus TTS timed out, falling back to SpeechSynthesis")
-      runSpeechSynthesis()
-    }
-  }, 4500)
-
-  // Fallback order: Web Audio (Groq Orpheus) → SpeechSynthesis
-  api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 8000 })
-    .then(res => {
-      if (finished || usingSpeechSynthesis) return
-      if (!res?.data?.size) {
-        runSpeechSynthesis()
-        return
+  const runOrpheusFallback = () => {
+    if (finished || activeAudio) return
+    
+    // Set a backup timeout: if Orpheus doesn't load/play within 4.5 seconds, just finish
+    fallbackTimeout = setTimeout(() => {
+      if (!finished && !activeAudio) {
+        console.warn("Orpheus TTS timed out, finishing")
+        done()
       }
+    }, 4500)
 
-      try {
-        // Use FileReader to convert Blob to base64 data URL
-        // Capacitor WebViews often block or fail to load blob: URLs
-        const reader = new FileReader()
-        reader.readAsDataURL(res.data)
-        reader.onloadend = () => {
-          if (finished || usingSpeechSynthesis) return
-          const base64Url = reader.result
-          
-          // Create audio element and append to DOM to bypass WebView detached audio blocks
-          const audio = document.createElement('audio')
-          audio.style.display = 'none'
-          audio.src = base64Url
-          audio.setAttribute("playsinline", "true")
-          document.body.appendChild(audio)
-          
-          activeAudio = audio
+    api.post('/api/voice/speak', { text, voice: 'diana' }, { responseType: 'blob', timeout: 8000 })
+      .then(res => {
+        if (finished) return
+        if (!res?.data?.size) {
+          done()
+          return
+        }
 
-          const cleanup = () => {
-            try {
-              if (document.body.contains(audio)) {
-                document.body.removeChild(audio)
-              }
-            } catch (e) {}
-          }
-
-          audio.onended = () => {
-            cleanup()
-            activeAudio = null
-            done()
-          }
-
-          audio.onerror = (e) => {
-            console.error("Audio playback error, falling back to SpeechSynthesis", e)
-            cleanup()
-            activeAudio = null
-            runSpeechSynthesis()
-          }
-
-          audio.oncanplaythrough = async () => {
-            if (finished || usingSpeechSynthesis) {
-              cleanup()
-              return
-            }
+        try {
+          const reader = new FileReader()
+          reader.readAsDataURL(res.data)
+          reader.onloadend = () => {
+            if (finished) return
+            const base64Url = reader.result
             
-            if (fallbackTimeout) {
-              clearTimeout(fallbackTimeout)
-              fallbackTimeout = null
+            const audio = document.createElement('audio')
+            audio.style.display = 'none'
+            audio.src = base64Url
+            audio.setAttribute("playsinline", "true")
+            document.body.appendChild(audio)
+            
+            activeAudio = audio
+
+            const cleanup = () => {
+              try {
+                if (document.body.contains(audio)) {
+                  document.body.removeChild(audio)
+                }
+              } catch (e) {}
             }
-            try {
-              console.log("Trying audio playback")
-              await audio.play()
-              console.log("Audio playback started")
-            } catch (err) {
-              console.error("Audio play failed, falling back to SpeechSynthesis", err)
+
+            audio.onended = () => {
               cleanup()
               activeAudio = null
-              runSpeechSynthesis()
+              done()
+            }
+
+            audio.onerror = (e) => {
+              console.error("Audio playback error:", e)
+              cleanup()
+              activeAudio = null
+              done()
+            }
+
+            audio.oncanplaythrough = async () => {
+              if (finished) {
+                cleanup()
+                return
+              }
+              
+              if (fallbackTimeout) {
+                clearTimeout(fallbackTimeout)
+                fallbackTimeout = null
+              }
+              try {
+                await audio.play()
+              } catch (err) {
+                console.error("Audio play failed:", err)
+                cleanup()
+                activeAudio = null
+                done()
+              }
             }
           }
+          reader.onerror = () => {
+            done()
+          }
+        } catch (err) {
+          done()
         }
-        reader.onerror = () => {
-          console.error("FileReader error, falling back to SpeechSynthesis")
-          runSpeechSynthesis()
-        }
-      } catch (err) {
-        console.error("Audio setup failed, falling back to SpeechSynthesis", err)
-        runSpeechSynthesis()
-      }
-    })
-    .catch(err => {
-      console.warn("TTS request failed, falling back to SpeechSynthesis", err)
-      runSpeechSynthesis()
-    })
+      })
+      .catch(err => {
+        done()
+      })
+  }
+
+  // Execute SpeechSynthesis immediately with 0-latency
+  runSpeechSynthesis()
 
   // Return clean cancellation function
   return () => {

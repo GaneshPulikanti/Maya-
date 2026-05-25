@@ -292,26 +292,35 @@ export const ChatProvider = ({ children }) => {
     }
   }, [])
 
-  // Preload messages for all inactive sessions in the background
+  // Preload messages for the most recent 3 sessions in the background to ensure snappy switching
   useEffect(() => {
     const preload = async () => {
       if (!token || sessions.length === 0) return
-      for (const session of sessions) {
-        if (!sessionsMessages[session.id] && !prefetchingRef.current.has(session.id)) {
-          prefetchingRef.current.add(session.id)
-          try {
-            const response = await api.get(`/api/chat/sessions/${session.id}/messages?t=${Date.now()}`)
-            setSessionsMessages(prev => ({ ...prev, [session.id]: response.data }))
-          } catch (error) {
-            console.error(`Failed to preload messages for session ${session.id}:`, error)
-          } finally {
-            prefetchingRef.current.delete(session.id)
-          }
+      // Only preload the top 3 sessions
+      const topSessions = sessions.slice(0, 3)
+      
+      const promises = topSessions.map(async (session) => {
+        // Use a functional state check to prevent loading if already in sessionsMessages ref/state
+        if (prefetchingRef.current.has(session.id)) return
+        
+        prefetchingRef.current.add(session.id)
+        try {
+          const response = await api.get(`/api/chat/sessions/${session.id}/messages?t=${Date.now()}`)
+          setSessionsMessages(prev => {
+            if (prev[session.id]) return prev // already loaded
+            return { ...prev, [session.id]: response.data }
+          })
+        } catch (error) {
+          console.error(`Failed to preload messages for session ${session.id}:`, error)
+        } finally {
+          prefetchingRef.current.delete(session.id)
         }
-      }
+      })
+      
+      await Promise.all(promises)
     }
     preload()
-  }, [sessions, token, sessionsMessages])
+  }, [sessions, token])
 
   // Dynamically synchronize the browser URL path with activeSessionId
   useEffect(() => {
@@ -594,101 +603,104 @@ export const ChatProvider = ({ children }) => {
           .trim()
           .slice(0, 400)
 
-        // Attempt TTS — try Groq Orpheus, Web Speech API is immediate fallback
-        ;(async () => {
-          let orpheusWorked = false
-          try {
-            const speakResponse = await api.post(
-              '/api/voice/speak',
-              { text: ttsText, voice: 'diana' },
-              { responseType: 'blob', timeout: 12000 }
-            )
-            if (speakResponse.status === 200 && speakResponse.data.size > 0) {
-              // Switch to base64 Data URL to bypass Android WebView/Capacitor blob URL restrictions
-              const base64Url = await new Promise((resolve, reject) => {
-                const reader = new FileReader()
-                reader.readAsDataURL(speakResponse.data)
-                reader.onloadend = () => resolve(reader.result)
-                reader.onerror = reject
-              })
-              
-              // Create and append audio element to DOM to bypass WebView detached audio blocks
-              const audio = document.createElement('audio')
-              audio.style.display = 'none'
-              audio.src = base64Url
-              audio.setAttribute("playsinline", "true")
-              document.body.appendChild(audio)
-              
-              const cleanup = () => {
-                try {
-                  if (document.body.contains(audio)) {
-                    document.body.removeChild(audio)
-                  }
-                } catch (e) {}
-              }
+        // Attempt TTS — Web Speech API is primary for 0-latency, Groq Orpheus is backup
+        if (window.speechSynthesis) {
+          const speak = () => {
+            const utterance = new SpeechSynthesisUtterance(ttsText)
+            utterance.lang = 'en-US' // Explicitly set language for Android TTS
+            utterance.rate = 1.0
+            utterance.pitch = 1.05
+            utterance.volume = 1.0
 
-              audio.onended = () => {
-                cleanup()
-              }
-              audio.onerror = () => {
-                cleanup()
-              }
-
-              const playResult = await audio.play().catch((err) => {
-                console.error("Auto-play TTS audio failed:", err)
-                cleanup()
-                return null
-              })
-              if (playResult !== null || audio.readyState > 0) {
-                orpheusWorked = true
-              }
+            // Explicitly choose a premium female voice
+            const voices = window.speechSynthesis.getVoices()
+            const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
+            
+            // On Android, skip setting custom voice to avoid remote voice download silent failures
+            if (!isAndroid) {
+              const femaleVoice = voices.find(v => 
+                ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
+                  v.name.includes(name)
+                )
+              ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
+              if (femaleVoice) utterance.voice = femaleVoice
             }
-          } catch (err) {
-            console.warn('Groq Orpheus TTS unavailable, using Web Speech:', err?.response?.status || err.message)
-          }
 
-          // Web Speech API fallback if Orpheus failed
-          if (!orpheusWorked && window.speechSynthesis) {
-            const speak = () => {
-              try {
-                window.speechSynthesis.cancel()
-              } catch (e) {}
-              const utterance = new SpeechSynthesisUtterance(ttsText)
-              utterance.lang = 'en-US' // Explicitly set language for Android TTS
-              utterance.rate = 1.0
-              utterance.pitch = 1.05
-              utterance.volume = 1.0
-
-              // Explicitly choose a premium female voice
-              const voices = window.speechSynthesis.getVoices()
-              const isAndroid = typeof window !== 'undefined' && (/android/i.test(navigator.userAgent) || (window.Capacitor && window.Capacitor.getPlatform() === 'android'))
-              
-              // On Android, skip setting custom voice to avoid remote voice download silent failures
-              if (!isAndroid) {
-                const femaleVoice = voices.find(v => 
-                  ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Google US English', 'Hazel', 'Zira', 'Fiona', 'Veena'].some(name => 
-                    v.name.includes(name)
-                  )
-                ) || voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('female'))
-                if (femaleVoice) utterance.voice = femaleVoice
-              }
-
+            const doSpeak = () => {
               try {
                 window.speechSynthesis.speak(utterance)
               } catch (e) {
                 console.error("SpeechSynthesis speak failed:", e)
+                runOrpheusFallback()
               }
             }
-            // Ensure voices are loaded
-            if (window.speechSynthesis.getVoices().length > 0) {
-              speak()
+
+            if (window.speechSynthesis.speaking) {
+              try {
+                window.speechSynthesis.cancel()
+              } catch (e) {}
+              setTimeout(doSpeak, 100)
             } else {
-              window.speechSynthesis.addEventListener('voiceschanged', speak, { once: true })
-              // Force trigger in case event never fires (some browsers)
-              setTimeout(speak, 300)
+              doSpeak()
             }
           }
-        })()
+
+          const runOrpheusFallback = async () => {
+            try {
+              const speakResponse = await api.post(
+                '/api/voice/speak',
+                { text: ttsText, voice: 'diana' },
+                { responseType: 'blob', timeout: 12000 }
+              )
+              if (speakResponse.status === 200 && speakResponse.data.size > 0) {
+                // Switch to base64 Data URL to bypass Android WebView/Capacitor blob URL restrictions
+                const base64Url = await new Promise((resolve, reject) => {
+                  const reader = new FileReader()
+                  reader.readAsDataURL(speakResponse.data)
+                  reader.onloadend = () => resolve(reader.result)
+                  reader.onerror = reject
+                })
+                
+                // Create and append audio element to DOM to bypass WebView detached audio blocks
+                const audio = document.createElement('audio')
+                audio.style.display = 'none'
+                audio.src = base64Url
+                audio.setAttribute("playsinline", "true")
+                document.body.appendChild(audio)
+                
+                const cleanup = () => {
+                  try {
+                    if (document.body.contains(audio)) {
+                      document.body.removeChild(audio)
+                    }
+                  } catch (e) {}
+                }
+
+                audio.onended = () => {
+                  cleanup()
+                }
+                audio.onerror = () => {
+                  cleanup()
+                }
+
+                await audio.play().catch((err) => {
+                  console.error("Auto-play TTS audio failed:", err)
+                  cleanup()
+                })
+              }
+            } catch (err) {
+              console.warn('Groq Orpheus TTS unavailable, using Web Speech:', err?.response?.status || err.message)
+            }
+          }
+
+          if (window.speechSynthesis.getVoices().length > 0) {
+            speak()
+          } else {
+            window.speechSynthesis.addEventListener('voiceschanged', speak, { once: true })
+            // Force trigger in case event never fires (some browsers)
+            setTimeout(speak, 300)
+          }
+        }
       }
 
     } catch (error) {
