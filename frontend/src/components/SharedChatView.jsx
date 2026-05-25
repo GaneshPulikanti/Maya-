@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { Heart, MessageSquare, Copy, Check, ChevronLeft, ArrowRight, Loader2, Send, Volume2, VolumeX, Download } from 'lucide-react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { Heart, MessageSquare, Copy, Check, ChevronLeft, ChevronRight, ArrowRight, Loader2, Send, Volume2, VolumeX, Download } from 'lucide-react'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
@@ -15,6 +15,7 @@ const api = axios.create({
 
 export default function SharedChatView({ sessionId, onBackToApp }) {
   const { user } = useAuth()
+  const isGroupChat = window.location.pathname.startsWith('/group')
   let chatContext = null
   try {
     chatContext = useChat()
@@ -29,9 +30,82 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
   const [isCloning, setIsCloning] = useState(false)
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
   const [speakingId, setSpeakingId] = useState(null)
+  const [localVersions, setLocalVersions] = useState({})
 
   const activeAudioRef = useRef(null)
   const messagesEndRef = useRef(null)
+
+  const sortedMessages = useMemo(() => {
+    return [...(session?.messages || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  }, [session?.messages])
+
+  const displayMessages = useMemo(() => {
+    const result = []
+    const skipIds = new Set()
+    for (let i = 0; i < sortedMessages.length; i++) {
+      const msg = sortedMessages[i]
+      if (skipIds.has(msg.id)) continue
+
+      if (msg.role === 'user') {
+        if (msg.content && msg.content.startsWith('{"versions":')) {
+          try {
+            const vd = JSON.parse(msg.content)
+            const currentIdx = localVersions[msg.id] !== undefined ? localVersions[msg.id] : (vd.current || 0)
+            const currentPair = vd.versions[currentIdx]
+            
+            result.push({ ...msg, content: currentPair.user, _originalContent: msg.content })
+            
+            const nextMsg = sortedMessages[i + 1]
+            if (nextMsg && nextMsg.role === 'assistant') {
+              skipIds.add(nextMsg.id)
+            }
+            
+            if (currentPair.assistant) {
+              result.push({
+                id: `vhist-${msg.id}-${currentIdx}`,
+                role: 'assistant',
+                content: currentPair.assistant,
+                created_at: msg.created_at,
+                _isVersionHistory: true
+              })
+            }
+          } catch (e) {
+            result.push(msg)
+          }
+        } else {
+          result.push(msg)
+        }
+      } else {
+        result.push(msg)
+      }
+    }
+    return result
+  }, [sortedMessages, localVersions])
+
+  const navigateVersion = async (msgId, direction, currentContent) => {
+    try {
+      const data = JSON.parse(currentContent)
+      const currentIdx = localVersions[msgId] !== undefined ? localVersions[msgId] : (data.current || 0)
+      const newIdx = Math.max(0, Math.min(data.versions.length - 1, currentIdx + direction))
+      
+      setLocalVersions(prev => ({ ...prev, [msgId]: newIdx }))
+
+      const token = localStorage.getItem('token')
+      if (token) {
+        const newJsonContent = JSON.stringify({
+          ...data,
+          current: newIdx
+        })
+        const headers = { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+        await api.put(`/api/chat/messages/${msgId}`, { content: newJsonContent }, { headers })
+      }
+    } catch (e) {
+      console.error("Failed to navigate version:", e)
+    }
+  }
 
   const speakMessageText = async (text, msgId) => {
     // If clicking the currently speaking message, stop it
@@ -200,6 +274,18 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     // Optional: scrollToBottom('smooth') could go here if desired, but user should see title first
   }, [session])
 
+  // Redirect mobile web visitors to the native APK app if installed
+  useEffect(() => {
+    const isMobileBrowser = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) && !window.Capacitor
+    if (isMobileBrowser && sessionId) {
+      const scheme = "org.maya.companion"
+      const appUrl = `${scheme}://${isGroupChat ? 'group' : 'share'}/${sessionId}`
+      
+      // Attempt redirection to the app URL scheme
+      window.location.href = appUrl
+    }
+  }, [sessionId, isGroupChat])
+
   const copyMessageText = async (text, id) => {
     try {
       await navigator.clipboard.writeText(text)
@@ -224,13 +310,11 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     if (user) {
       setIsCloning(true)
       try {
-        if (isGroupChat && chatContext?.joinSession) {
+        if (chatContext?.joinSession) {
           await chatContext.joinSession(sessionId)
-        } else if (chatContext?.cloneSession) {
-          await chatContext.cloneSession(sessionId)
         }
       } catch (err) {
-        alert(`Failed to ${isGroupChat ? 'join' : 'clone'} conversation: ` + (err.message || err))
+        alert(`Failed to ${isGroupChat ? 'join' : 'continue'} conversation: ` + (err.message || err))
       } finally {
         setIsCloning(false)
       }
@@ -266,6 +350,17 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
     const isUser = msg.role === 'user'
     let displayName = isUser ? 'User' : 'Maya'
     let cleanContent = msg.content
+
+    let hasVersions = false
+    let vd = null
+    const originalContent = msg._originalContent || msg.content
+    if (originalContent && originalContent.startsWith('{"versions":')) {
+      try {
+        vd = JSON.parse(originalContent)
+        hasVersions = vd.versions?.length > 1
+      } catch (e) {}
+    }
+    const currentIdx = vd ? (localVersions[msg.id] !== undefined ? localVersions[msg.id] : vd.current) : 0
 
     if (isUser) {
       let tempContent = msg.content;
@@ -315,6 +410,37 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
               {displayName}
             </div>
             {formatText(cleanContent)}
+
+            {hasVersions && (
+              <div className="flex items-center gap-0.5 mt-2 select-none justify-end">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigateVersion(msg.id, -1, originalContent)
+                  }}
+                  disabled={currentIdx === 0}
+                  className="p-0.5 rounded text-rose-300 hover:text-rose-200 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                  title="Previous version"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[10px] text-rose-200 font-medium tabular-nums px-0.5">
+                  {currentIdx + 1}/{vd.versions.length}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigateVersion(msg.id, 1, originalContent)
+                  }}
+                  disabled={currentIdx === vd.versions.length - 1}
+                  className="p-0.5 rounded text-rose-300 hover:text-rose-200 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                  title="Next version"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[9px] text-rose-300/70 italic ml-1 font-sans">Edited</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -366,7 +492,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
         <div className="flex items-center gap-2">
           <Loader2 className="w-4 h-4 text-rose-400 animate-spin" />
           <span className="text-sm font-sans tracking-wide font-light">
-            Cloning conversation history into your sanctuary...
+            {isGroupChat ? "Joining group chat room..." : "Connecting to shared conversation..."}
           </span>
         </div>
       </div>
@@ -382,7 +508,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
         <div className="flex items-center gap-2">
           <Loader2 className="w-4 h-4 text-rose-400 animate-spin" />
           <span className="text-sm font-sans tracking-wide font-light">
-            Decrypting shared moments...
+            {isGroupChat ? "Join Chat..." : "Continue Chat..."}
           </span>
         </div>
       </div>
@@ -412,7 +538,6 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
 
   const messages = session?.messages || []
   const title = session?.title?.replace(/👥\s*/g, '').trim() || "Shared Conversation"
-  const isGroupChat = window.location.pathname.startsWith('/group')
 
   return (
     <div className="h-full w-full bg-wine-950 flex flex-col overflow-hidden relative">
@@ -481,7 +606,7 @@ export default function SharedChatView({ sessionId, onBackToApp }) {
             </div>
           ) : (
             <>
-            {[...messages].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).map((msg) => renderMessage(msg))}
+            {displayMessages.map((msg) => renderMessage(msg))}
             
             {/* Global Typing Indicator for Group Chat Sync */}
             {messages.length > 0 && messages[messages.length - 1].role === 'user' && (

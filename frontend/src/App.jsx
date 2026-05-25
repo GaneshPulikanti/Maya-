@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { App as CapApp } from '@capacitor/app'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ChatProvider, useChat } from './context/ChatContext'
 import Auth from './pages/Auth'
@@ -93,6 +94,48 @@ const Dashboard = () => {
 const AppContent = () => {
   const { user, loading } = useAuth()
   const [showAuthForShared, setShowAuthForShared] = useState(false)
+
+  useEffect(() => {
+    let deepLinkListener;
+    const initDeepLinks = async () => {
+      try {
+        deepLinkListener = await CapApp.addListener('appUrlOpen', data => {
+          console.log('App opened with URL:', data.url)
+          
+          let rawPath = ""
+          if (data.url.includes("://")) {
+            rawPath = data.url.split("://")[1] || ""
+          } else {
+            try {
+              const urlObj = new URL(data.url)
+              rawPath = urlObj.pathname.slice(1)
+            } catch (e) {
+              const matches = data.url.match(/vercel\.app\/(.*)/)
+              if (matches) rawPath = matches[1]
+            }
+          }
+          
+          const parts = rawPath.replace(/^\/+/, '').split('/')
+          const pathType = parts[0]
+          const sessionId = parts[1]
+          
+          if ((pathType === 'share' || pathType === 'group') && sessionId) {
+            window.history.pushState({}, '', `/${pathType}/${sessionId}`)
+            window.location.reload()
+          }
+        })
+      } catch (err) {
+        console.warn("Capacitor App listener not available:", err)
+      }
+    }
+    
+    initDeepLinks()
+    return () => {
+      if (deepLinkListener && typeof deepLinkListener.remove === 'function') {
+        deepLinkListener.remove()
+      }
+    }
+  }, [])
 
   // Intercept shared link URL path directly from the browser window location
   const pathParts = window.location.pathname.split('/')

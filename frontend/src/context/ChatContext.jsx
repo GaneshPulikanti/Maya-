@@ -4,7 +4,7 @@ import { api, useAuth } from './AuthContext'
 const ChatContext = createContext(null)
 
 export const ChatProvider = ({ children }) => {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
   const [sessions, setSessions] = useState([])
   const [activeSessionId, _setActiveSessionId] = useState(null)
   const [messages, setMessages] = useState([])
@@ -91,7 +91,14 @@ export const ChatProvider = ({ children }) => {
       
       _setActiveSessionId(joinedSession.id)
       setShowSharedViewOnly(false)
-      window.history.pushState({}, '', `/chat/${joinedSession.id}`)
+
+      const isGroup = joinedSession.title?.toLowerCase().includes('group')
+      const isShared = joinedSession.user_id !== user?.id
+      const targetPath = isGroup 
+        ? `/group/${joinedSession.id}` 
+        : (isShared ? `/share/${joinedSession.id}` : `/chat/${joinedSession.id}`)
+
+      window.history.pushState({}, '', targetPath)
       return joinedSession
     } catch (error) {
       console.error("Failed to join shared session:", error)
@@ -120,12 +127,18 @@ export const ChatProvider = ({ children }) => {
         })
       } else if (continueSharedId) {
         sessionStorage.removeItem('continue_shared_session_id')
-        cloneSession(continueSharedId).catch(err => {
-          console.error("Failed to auto-clone session on login:", err)
+        joinSession(continueSharedId).catch(err => {
+          console.error("Failed to auto-join shared session on login:", err)
         })
       } else if (sharedSessionId) {
-        // They are visiting a shared link - show the read-only shared view!
-        setShowSharedViewOnly(true)
+        // If they already joined this session, select it and show dashboard, otherwise show read-only view
+        const alreadyJoined = response.data.find(s => s.id === sharedSessionId)
+        if (alreadyJoined) {
+          _setActiveSessionId(sharedSessionId)
+          setShowSharedViewOnly(false)
+        } else {
+          setShowSharedViewOnly(true)
+        }
       } else {
         const justLoggedIn = sessionStorage.getItem('just_logged_in') === 'true'
         if (justLoggedIn) {
@@ -337,16 +350,22 @@ export const ChatProvider = ({ children }) => {
   // Dynamically synchronize the browser URL path with activeSessionId
   useEffect(() => {
     if (token) {
-      // If we are currently showing a shared view of a session they don't own, don't override the URL path.
       if (showSharedViewOnly) return
 
-      const pathParts = window.location.pathname.split('/')
-      const isSharedPath = (pathParts[1] === 'share' || pathParts[1] === 'group') && pathParts[2]
-      if (isSharedPath) return
-
       if (activeSessionId) {
-        if (window.location.pathname !== `/chat/${activeSessionId}`) {
-          window.history.pushState({}, '', `/chat/${activeSessionId}`)
+        const activeSess = sessions.find(s => s.id === activeSessionId)
+        let expectedPath = `/chat/${activeSessionId}`
+        if (activeSess) {
+          const isGroup = activeSess.title?.toLowerCase().includes('group')
+          const isShared = activeSess.user_id !== user?.id
+          if (isGroup) {
+            expectedPath = `/group/${activeSessionId}`
+          } else if (isShared) {
+            expectedPath = `/share/${activeSessionId}`
+          }
+        }
+        if (window.location.pathname !== expectedPath) {
+          window.history.pushState({}, '', expectedPath)
         }
       } else {
         if (window.location.pathname !== '/') {
@@ -354,7 +373,7 @@ export const ChatProvider = ({ children }) => {
         }
       }
     }
-  }, [activeSessionId, token, showSharedViewOnly])
+  }, [activeSessionId, token, showSharedViewOnly, sessions, user])
 
 
   // Create new session

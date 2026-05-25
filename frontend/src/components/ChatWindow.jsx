@@ -218,8 +218,6 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   const [shareOpen, setShareOpen] = useState(false)
   const [editingMessageId, setEditingMessageId] = useState(null)
   const [editingText, setEditingText] = useState("")
-  // Version history: { [msgId]: { pairs: [{user: string, assistant: string|null}], current: number } }
-  const [messageVersions, setMessageVersions] = useState({})
   const inputRef = useRef(null)
 
   // Autocomplete states for @ mentions
@@ -254,26 +252,32 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       if (skipIds.has(msg.id)) continue
 
       if (msg.role === 'user') {
-        const vd = messageVersions[msg.id]
-        if (vd && vd.current < vd.pairs.length - 1) {
-          // Viewing an older version — substitute content and swap the assistant reply
-          const pair = vd.pairs[vd.current]
-          result.push({ ...msg, content: pair.user })
-          // Skip the real (latest) assistant reply in the DB
-          const nextMsg = messages[i + 1]
-          if (nextMsg && nextMsg.role === 'assistant') skipIds.add(nextMsg.id)
-          // Show the stored assistant reply for this version instead
-          if (pair.assistant) {
-            result.push({
-              id: `vhist-${msg.id}-${vd.current}`,
-              role: 'assistant',
-              content: pair.assistant,
-              created_at: msg.created_at,
-              _isVersionHistory: true
-            })
+        if (msg.content && msg.content.startsWith('{"versions":')) {
+          try {
+            const vd = JSON.parse(msg.content)
+            const currentIdx = vd.current || 0
+            if (currentIdx < vd.versions.length - 1) {
+              const pair = vd.versions[currentIdx]
+              result.push({ ...msg, content: pair.user, _originalContent: msg.content })
+              const nextMsg = messages[i + 1]
+              if (nextMsg && nextMsg.role === 'assistant') skipIds.add(nextMsg.id)
+              if (pair.assistant) {
+                result.push({
+                  id: `vhist-${msg.id}-${currentIdx}`,
+                  role: 'assistant',
+                  content: pair.assistant,
+                  created_at: msg.created_at,
+                  _isVersionHistory: true
+                })
+              }
+            } else {
+              const pair = vd.versions[currentIdx]
+              result.push({ ...msg, content: pair.user, _originalContent: msg.content })
+            }
+          } catch (e) {
+            result.push(msg)
           }
         } else {
-          // Latest version — show normally (content already correct in messages array)
           result.push(msg)
         }
       } else {
@@ -281,7 +285,7 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
       }
     }
     return result
-  }, [messages, messageVersions])
+  }, [messages])
 
   const copyToClipboard = (text, id) => {
     if (!text) return
@@ -320,21 +324,39 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   }
 
   // ── Version History Helpers ────────────────────────────────────────────────
+  // ── Version History Helpers ────────────────────────────────────────────────
   // Returns the current display content for a message (from version history or msg.content)
   const getDisplayContent = (msg) => {
-    const vd = messageVersions[msg.id]
-    if (!vd) return msg.content
-    return vd.pairs[vd.current]?.user || msg.content
+    if (msg.content && msg.content.startsWith('{"versions":')) {
+      try {
+        const vd = JSON.parse(msg.content)
+        return vd.versions[vd.current]?.user || ''
+      } catch (e) {}
+    }
+    return msg.content
   }
 
   // Navigate between saved version pairs (-1 = back, +1 = forward)
-  const navigateVersion = (msgId, direction) => {
-    setMessageVersions(prev => {
-      const vd = prev[msgId]
-      if (!vd) return prev
-      const newIdx = Math.max(0, Math.min(vd.pairs.length - 1, vd.current + direction))
-      return { ...prev, [msgId]: { ...vd, current: newIdx } }
-    })
+  const navigateVersion = async (msgId, direction) => {
+    const msgIndex = messages.findIndex(m => m.id === msgId)
+    const originalMsg = messages[msgIndex]
+    if (!originalMsg) return
+
+    if (originalMsg.content && originalMsg.content.startsWith('{"versions":')) {
+      try {
+        const data = JSON.parse(originalMsg.content)
+        const newIdx = Math.max(0, Math.min(data.versions.length - 1, data.current + direction))
+        if (newIdx !== data.current) {
+          const newJsonContent = JSON.stringify({
+            ...data,
+            current: newIdx
+          })
+          await editMessage(msgId, newJsonContent)
+        }
+      } catch (e) {
+        console.error("Failed to navigate version:", e)
+      }
+    }
   }
 
   const handleSaveEdit = async (msgId, prefix) => {
@@ -342,47 +364,67 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     try {
       const fullText = `${prefix}${editingText.trim()}`
 
-      // Capture the pre-edit assistant reply before it gets replaced
       const msgIndex = messages.findIndex(m => m.id === msgId)
-      const currentUserContent = getDisplayContent({ id: msgId, content: messages[msgIndex]?.content || '' })
-      const nextMsg = msgIndex !== -1 ? messages[msgIndex + 1] : null
-      const currentAssistantContent = (nextMsg && nextMsg.role === 'assistant') ? nextMsg.content : null
+      const originalMsg = messages[msgIndex]
+      if (!originalMsg) return
 
-      // Persist edit to backend — returns real UUID (if msgId was a local temp ID)
-      const updatedMessage = await editMessage(msgId, fullText)
-      const newMsgId = updatedMessage?.id || msgId
+      let versions = []
+      
+      if (originalMsg.content && originalMsg.content.startsWith('{"versions":')) {
+        try {
+          const data = JSON.parse(originalMsg.content)
+          versions = data.versions || []
+        } catch (e) {}
+      } else {
+        // First edit: seed with original content
+        const nextMsg = msgIndex !== -1 ? messages[msgIndex + 1] : null
+        const assistantContent = (nextMsg && nextMsg.role === 'assistant') ? nextMsg.content : null
+        versions = [{ user: originalMsg.content, assistant: assistantContent }]
+      }
 
-      // Record the pre-edit pair + open slot for the new assistant reply
-      setMessageVersions(prev => {
-        const existing = prev[msgId]
-        let basePairs
-        if (existing) {
-          basePairs = existing.pairs
-        } else {
-          // First-ever edit: seed with original pair
-          basePairs = [{ user: currentUserContent, assistant: currentAssistantContent }]
-        }
-        const newPairs = [...basePairs, { user: fullText, assistant: null }]
-        const updated = { ...prev }
-        if (newMsgId !== msgId) delete updated[msgId]
-        updated[newMsgId] = { pairs: newPairs, current: newPairs.length - 1 }
-        return updated
+      // Add the new edited version
+      const newVersions = [...versions, { user: fullText, assistant: null }]
+      const newJsonContent = JSON.stringify({
+        versions: newVersions,
+        current: newVersions.length - 1
       })
 
+      // Persist edit to backend
+      const updatedMessage = await editMessage(msgId, newJsonContent)
+      
       setEditingMessageId(null)
       setEditingText("")
 
-      // Kick off regeneration; onComplete fills in the new pair's assistant text
-      regenerateAfterEdit(newMsgId, (assistantText) => {
-        setMessageVersions(prev => {
-          const vd = prev[newMsgId]
-          if (!vd) return prev
-          const lastIdx = vd.pairs.length - 1
-          const updatedPairs = vd.pairs.map((p, i) =>
-            i === lastIdx ? { ...p, assistant: assistantText } : p
-          )
-          return { ...prev, [newMsgId]: { ...vd, pairs: updatedPairs } }
-        })
+      // Kick off regeneration
+      const newMsgId = updatedMessage?.id || msgId
+      regenerateAfterEdit(newMsgId, async (assistantText) => {
+        try {
+          setMessages(prev => {
+            return prev.map(m => {
+              if (m.id === newMsgId) {
+                try {
+                  const data = JSON.parse(m.content)
+                  const lastIdx = data.versions.length - 1
+                  const updatedPairs = data.versions.map((p, i) =>
+                    i === lastIdx ? { ...p, assistant: assistantText } : p
+                  )
+                  const newJson = JSON.stringify({
+                    versions: updatedPairs,
+                    current: lastIdx
+                  })
+                  // Write final content containing assistant response to DB
+                  editMessage(newMsgId, newJson).catch(e => console.error("editMessage async fail:", e))
+                  return { ...m, content: newJson }
+                } catch (e) {
+                  return m
+                }
+              }
+              return m
+            })
+          })
+        } catch (e) {
+          console.error("Failed to save assistant response in message version:", e)
+        }
       })
     } catch (err) {
       alert("Failed to update message: " + (err.message || err))
@@ -390,55 +432,57 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
   }
 
   const handleDeleteMessage = async (msgId) => {
-    const vd = messageVersions[msgId]
-    if (vd && vd.pairs.length > 1) {
-      if (window.confirm("Delete only this version of the message and its reply?")) {
-        try {
-          const msgIndex = messages.findIndex(m => m.id === msgId)
-          const nextMsg = msgIndex !== -1 ? messages[msgIndex + 1] : null
-          const assistantMsgId = (nextMsg && nextMsg.role === 'assistant') ? nextMsg.id : null
+    const msgIndex = messages.findIndex(m => m.id === msgId)
+    const originalMsg = messages[msgIndex]
+    if (!originalMsg) return
 
-          const isDeletingActive = (vd.current === vd.pairs.length - 1)
-          const updatedPairs = vd.pairs.filter((_, idx) => idx !== vd.current)
-          const newCurrent = Math.min(vd.current, updatedPairs.length - 1)
+    if (originalMsg.content && originalMsg.content.startsWith('{"versions":')) {
+      try {
+        const data = JSON.parse(originalMsg.content)
+        if (data.versions.length > 1) {
+          if (window.confirm("Delete only this version of the message and its reply?")) {
+            const nextMsg = msgIndex !== -1 ? messages[msgIndex + 1] : null
+            const assistantMsgId = (nextMsg && nextMsg.role === 'assistant') ? nextMsg.id : null
 
-          if (isDeletingActive) {
-            const newActivePair = updatedPairs[updatedPairs.length - 1]
-            // Update user message content in backend
-            await editMessage(msgId, newActivePair.user)
-            // Update assistant message content in backend if assistant exists
-            if (assistantMsgId && newActivePair.assistant) {
-              await editMessage(assistantMsgId, newActivePair.assistant)
-            } else if (assistantMsgId && !newActivePair.assistant) {
-              await api.delete(`/api/chat/messages/${assistantMsgId}`)
-              setMessages(prev => prev.filter(m => m.id !== assistantMsgId))
+            const isDeletingActive = (data.current === data.versions.length - 1)
+            const updatedPairs = data.versions.filter((_, idx) => idx !== data.current)
+            const newCurrent = Math.min(data.current, updatedPairs.length - 1)
+
+            if (isDeletingActive) {
+              const newActivePair = updatedPairs[updatedPairs.length - 1]
+              const newJsonContent = JSON.stringify({
+                versions: updatedPairs,
+                current: newCurrent
+              })
+              await editMessage(msgId, newJsonContent)
+              if (assistantMsgId && newActivePair.assistant) {
+                await editMessage(assistantMsgId, newActivePair.assistant)
+              } else if (assistantMsgId && !newActivePair.assistant) {
+                await api.delete(`/api/chat/messages/${assistantMsgId}`)
+                setMessages(prev => prev.filter(m => m.id !== assistantMsgId))
+              }
+            } else {
+              const newJsonContent = JSON.stringify({
+                versions: updatedPairs,
+                current: newCurrent
+              })
+              await editMessage(msgId, newJsonContent)
             }
           }
-
-          // Update the version history state
-          setMessageVersions(prev => ({
-            ...prev,
-            [msgId]: { pairs: updatedPairs, current: newCurrent }
-          }))
-        } catch (err) {
-          alert("Failed to delete message version: " + (err.message || err))
+          return
         }
+      } catch (err) {
+        alert("Failed to delete message version: " + (err.message || err))
+        return
       }
-      return
     }
 
     if (window.confirm("Delete this message and Maya's reply? This can't be undone.")) {
       try {
         // Find the assistant message that immediately follows this user message
-        const msgIndex = messages.findIndex(m => m.id === msgId)
         const nextMsg = msgIndex !== -1 ? messages[msgIndex + 1] : null
         const assistantMsgId = (nextMsg && nextMsg.role === 'assistant') ? nextMsg.id : null
         await deleteMessagePair(msgId, assistantMsgId)
-        setMessageVersions(prev => {
-          const copy = { ...prev }
-          delete copy[msgId]
-          return copy
-        })
       } catch (err) {
         alert("Failed to delete message: " + (err.message || err))
       }
@@ -1133,8 +1177,15 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
     
     const replyData = renderReplyQuote(displayContent)
     const isEditing = editingMessageId === msg.id
-    const vd = messageVersions[msg.id]
-    const hasVersions = vd && vd.pairs && vd.pairs.length > 1
+    let hasVersions = false
+    let vd = null
+    const originalContent = msg._originalContent || msg.content
+    if (originalContent && originalContent.startsWith('{"versions":')) {
+      try {
+        vd = JSON.parse(originalContent)
+        hasVersions = vd.versions?.length > 1
+      } catch (e) {}
+    }
 
     return (
       <div className="flex flex-col gap-1 items-end w-full">
@@ -1207,11 +1258,11 @@ export default function ChatWindow({ sidebarOpen, toggleSidebar, toggleDocs }) {
               <ChevronLeft className="w-3 h-3" />
             </button>
             <span className="text-[10px] text-butter-300 font-medium tabular-nums px-0.5">
-              {vd.current + 1}/{vd.pairs.length}
+              {vd.current + 1}/{vd.versions.length}
             </span>
             <button
               onClick={() => navigateVersion(msg.id, 1)}
-              disabled={vd.current === vd.pairs.length - 1}
+              disabled={vd.current === vd.versions.length - 1}
               className="p-0.5 rounded text-butter-400 hover:text-rose-300 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
               title="Next version"
             >

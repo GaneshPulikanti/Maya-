@@ -18,6 +18,18 @@ from app.services.vector_service import vector_service
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["Chat & Conversations"])
 
+def get_clean_message_content(content: str) -> str:
+    if content and content.startswith('{"versions":'):
+        try:
+            data = json.loads(content)
+            curr_idx = data.get("current", 0)
+            pairs = data.get("versions", [])
+            if curr_idx < len(pairs):
+                return pairs[curr_idx].get("user", "")
+        except Exception:
+            pass
+    return content
+
 # ==============================================================================
 # CHAT SESSIONS CRUD
 # ==============================================================================
@@ -221,7 +233,7 @@ async def list_sessions(
             
             if first_msg:
                 content_preview = first_msg.content.strip()
-                clean_content = content_preview
+                clean_content = get_clean_message_content(content_preview)
                 if clean_content.startswith("[Reply to:"):
                     end_idx = clean_content.find("]")
                     if end_idx != -1:
@@ -512,7 +524,7 @@ async def send_message_stream(
     history = list(reversed(history_reversed))
     
     # Format messages array for LLM client: [{"role": "user", "content": "..."}]
-    formatted_messages = [{"role": m.role, "content": m.content} for m in history]
+    formatted_messages = [{"role": m.role, "content": get_clean_message_content(m.content)} for m in history]
     
     # 5. Retrieve long-term memories and PDF context
     # Fetch user specific memories matching the query
@@ -794,7 +806,7 @@ async def send_shared_message_stream(
     history = list(reversed(history_reversed))
     
     # Format messages array for LLM client: [{"role": "user", "content": "..."}]
-    formatted_messages = [{"role": m.role, "content": m.content} for m in history]
+    formatted_messages = [{"role": m.role, "content": get_clean_message_content(m.content)} for m in history]
     
     # 4. Retrieve long-term memories and PDF context of the session owner
     memory_context = await memory_service.retrieve_relevant_memories(
@@ -1014,12 +1026,12 @@ async def regenerate_after_edit(
     history_result = await db.execute(history_stmt)
     history_reversed = history_result.scalars().all()
     history = list(reversed(history_reversed))
-    formatted_messages = [{"role": m.role, "content": m.content} for m in history]
+    formatted_messages = [{"role": m.role, "content": get_clean_message_content(m.content)} for m in history]
 
     # 4. Build full LLM context (memories, RAG, persona) — mirrors send_message_stream
     memory_context = await memory_service.retrieve_relevant_memories(
         user_id=current_user.id,
-        query_text=user_msg.content,
+        query_text=get_clean_message_content(user_msg.content),
         limit=4
     )
     if memory_context and len(memory_context) > 1000:
@@ -1035,7 +1047,7 @@ async def regenerate_after_edit(
             break
         snippet_results = await vector_service.query_similarity(
             collection_name=doc.chroma_collection,
-            query_text=user_msg.content,
+            query_text=get_clean_message_content(user_msg.content),
             limit=1 if len(user_docs) > 2 else 2
         )
         for snip in snippet_results:
@@ -1062,7 +1074,7 @@ async def regenerate_after_edit(
     )
 
     session_id = user_msg.session_id
-    user_content = user_msg.content
+    user_content = get_clean_message_content(user_msg.content)
 
     # 5. Stream the fresh regenerated response
     async def event_generator():
