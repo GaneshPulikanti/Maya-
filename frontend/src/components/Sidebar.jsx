@@ -40,24 +40,39 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
   const [shareSession, setShareSession] = useState(null)
   const menuRef = useRef(null)
 
-  const getGroupInitials = (session) => {
+  const getGroupParticipants = (session) => {
     const msgs = (sessionsMessages && sessionsMessages[session.id]) || []
     const participants = new Set()
     
-    if (user?.email) {
-      participants.add(user.email.split('@')[0])
+    // 1. Add participants from session object
+    if (session.participants && Array.isArray(session.participants)) {
+      session.participants.forEach(email => {
+        if (email) {
+          participants.add(email.toLowerCase())
+        }
+      })
     }
-
+    
+    // 2. Add participants from messages
     msgs.forEach(msg => {
       if (msg.role === 'user' && msg.content) {
         const nameMatch = msg.content.match(/^\[Reply to:[^\]]*\]\s*\[(.*?)\]:\s*(.*)$/s) || msg.content.match(/^\[(.*?)\]:\s*(.*)$/s)
         if (nameMatch) {
-          participants.add(nameMatch[1])
+          participants.add(nameMatch[1].toLowerCase())
         }
       }
     })
 
-    const initialsList = Array.from(participants).map(name => {
+    // If there is a logged in user, make sure they are in the list
+    if (user?.email) {
+      participants.add(user.email.toLowerCase())
+    }
+
+    return Array.from(participants)
+  }
+
+  const getInitialsForParticipants = (session, participantsList) => {
+    return participantsList.map(name => {
       const cleanName = name.includes('@') ? name.split('@')[0] : name
       const userInitial = user?.email ? user.email[0].toUpperCase() : 'U'
       
@@ -76,9 +91,6 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
       }
       return (text || cleanName || 'U').substring(0, 2).toUpperCase()
     })
-
-    const uniqueInitials = Array.from(new Set(initialsList))
-    return uniqueInitials.length > 0 ? uniqueInitials : [user?.email ? user.email[0].toUpperCase() : 'U']
   }
 
   useEffect(() => {
@@ -283,52 +295,38 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
                   {/* Actions: Dropdown options (Rename, Share, Delete) */}
                   {editingId !== session.id && (
                     <div 
-                      className="relative shrink-0 flex items-center" 
+                      className="relative shrink-0 flex items-center gap-1.5" 
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                     >
-                      {/* Overlapping participant avatars for group chats when not hovered/active */}
-                      {isGroup && !isActive && activeMenuId !== session.id && (
-                        <div className="flex items-center -space-x-2 transition-all duration-200 group-hover:opacity-0 group-hover:scale-75 absolute right-1.5 pointer-events-none">
-                          <div className="w-5.5 h-5.5 rounded-full border border-wine-900 bg-rose-600 text-rose-50 flex items-center justify-center text-[9px] font-bold shadow-sm select-none">
-                            M
-                          </div>
-                          {getGroupInitials(session).slice(0, 2).map((initial, idx) => (
-                            <div 
-                              key={idx}
-                              className={`w-5.5 h-5.5 rounded-full border border-wine-900 ${getAvatarColor(initial)} flex items-center justify-center text-[9px] font-bold shadow-sm select-none`}
-                            >
-                              {initial}
+                      {/* Stacked participant avatars for group chats, side-by-side with options button */}
+                      {isGroup && (() => {
+                        const participantsList = getGroupParticipants(session)
+                        if (participantsList.length >= 2) {
+                          const initials = getInitialsForParticipants(session, participantsList)
+                          return (
+                            <div className="flex items-center -space-x-1.5 mr-1 select-none">
+                              {initials.slice(0, 3).map((initial, idx) => (
+                                <div 
+                                  key={idx}
+                                  title={initial}
+                                  className={`w-5.5 h-5.5 rounded-full border border-wine-900 ${getAvatarColor(initial)} flex items-center justify-center text-[9px] font-bold shadow-sm select-none`}
+                                >
+                                  {initial}
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Active session: show compact participant/account avatars left of the options menu */}
-                      {isActive && (
-                        <div className="flex items-center gap-1 mr-2">
-                          {getGroupInitials(session).slice(0, 3).map((initial, idx) => (
-                            <div
-                              key={idx}
-                              title={initial}
-                              className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold shadow-sm border border-wine-900 ${getAvatarColor(initial)}`}
-                            >
-                              {initial}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                          )
+                        }
+                        return null
+                      })()}
 
                       <button
                         onClick={(e) => toggleMenu(e, session.id)}
                         className={`p-1.5 rounded-lg transition-all duration-200 focus-within:opacity-100 ${
-                          isGroup 
-                            ? (isActive || activeMenuId === session.id 
-                                ? 'opacity-100 text-white hover:bg-white/10' 
-                                : 'opacity-0 group-hover:opacity-100 text-butter-300 hover:text-rose-500 hover:bg-rose-500/10')
-                            : (isActive 
-                                ? 'opacity-100 text-white hover:bg-white/10' 
-                                : 'opacity-0 group-hover:opacity-100 text-butter-300 hover:text-rose-500 hover:bg-rose-500/10')
+                          isActive || activeMenuId === session.id 
+                            ? 'opacity-100 text-white hover:bg-white/10' 
+                            : 'opacity-0 group-hover:opacity-100 text-butter-300 hover:text-rose-500 hover:bg-rose-500/10'
                         }`}
                         title="Conversation Options"
                       >
@@ -359,10 +357,12 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
                               setActiveMenuId(null)
                               try {
                                 const currentTitle = session.title || "New Chat"
+                                let updatedTitle = currentTitle
                                 if (!currentTitle.toLowerCase().includes("group")) {
-                                  await renameSession(session.id, `${currentTitle.replace('👥 ', '')} (Group)`)
+                                  updatedTitle = `${currentTitle.replace('👥 ', '')} (Group)`
+                                  await renameSession(session.id, updatedTitle)
                                 }
-                                handleShareClick(e, session)
+                                setShareSession({ id: session.id, title: updatedTitle })
                               } catch (err) {
                                 console.error("Failed to convert to group chat:", err)
                               }

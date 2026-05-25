@@ -280,7 +280,18 @@ export const ChatProvider = ({ children }) => {
       if (intervalId) clearInterval(intervalId)
     }
   }, [activeSessionId, isStreaming, showSharedViewOnly, sessions])
-
+  // Background polling for sessions list to keep sidebar sorting in sync
+  useEffect(() => {
+    let intervalId;
+    if (token && !isStreaming) {
+      intervalId = setInterval(() => {
+        fetchSessions()
+      }, 3000)
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [token, isStreaming])
   // Reload sessions on auth
   useEffect(() => {
     if (token) {
