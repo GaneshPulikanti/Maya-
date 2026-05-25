@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.maya.companion",
+      "sha256_cert_fingerprints": [
+        "93:6F:69:70:68:88:6E:01:2D:15:C0:BC:51:A7:F8:40:A3:6D:2F:66:0F:0C:40:9C:89:D2:C1:84:E7:71:7D:4B"
+      ]
+    }
+  }
+]
