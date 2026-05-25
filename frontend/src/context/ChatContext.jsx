@@ -384,9 +384,22 @@ export const ChatProvider = ({ children }) => {
 
   // Create new session
   const createSession = async (title = "New Conversation") => {
+    if (title === "Group Chat Room") {
+      try {
+        const response = await api.post('/api/chat/sessions', { title })
+        const newSession = response.data
+        setSessions(prev => [newSession, ...prev])
+        _setActiveSessionId(newSession.id)
+        setMessages([])
+        return newSession
+      } catch (error) {
+        console.error("Failed to create group session:", error)
+        throw error
+      }
+    }
     // Just switch to the "new" virtual session state. 
     // The actual DB session will be created when the first message is sent.
-    setActiveSessionId("new", true)
+    _setActiveSessionId("new")
     setMessages([])
     return { id: "new", title }
   }
