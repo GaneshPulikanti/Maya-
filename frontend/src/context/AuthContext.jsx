@@ -48,14 +48,20 @@ export const AuthProvider = ({ children }) => {
     initAuth()
   }, [token])
 
+  const getErrorMessage = (error, defaultMsg) => {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) return detail.map(e => e.msg || JSON.stringify(e)).join(', ');
+    return defaultMsg;
+  }
+
   const signup = async (email, password) => {
     try {
       const response = await api.post('/api/auth/signup', { email, password })
       // Auto login after successful signup
       return await login(email, password)
     } catch (error) {
-      const message = error.response?.data?.detail || "Registration failed. Try again."
-      throw new Error(message)
+      throw new Error(getErrorMessage(error, "Registration failed. Try again."))
     }
   }
 
@@ -77,8 +83,7 @@ export const AuthProvider = ({ children }) => {
       setUser(userProfile.data)
       return userProfile.data
     } catch (error) {
-      const message = error.response?.data?.detail || "Invalid login credentials."
-      throw new Error(message)
+      throw new Error(getErrorMessage(error, "Invalid login credentials."))
     }
   }
 

@@ -9,10 +9,11 @@ class VisionService:
     def __init__(self):
         self.client = AsyncGroq(api_key=settings.GROQ_API_KEY)
 
-    async def analyze_image(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
+    async def analyze_image(self, image_bytes: bytes, mime_type: str = "image/jpeg", prompt: str = None) -> str:
         """
         Sends the image to the Groq vision model meta-llama/llama-4-scout-17b-16e-instruct and returns a simple text explanation.
         """
+        text_prompt = prompt if prompt else "Please provide a simple, clean, and caring explanation of what is in this image."
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
         try:
             response = await self.client.chat.completions.create(
@@ -21,7 +22,7 @@ class VisionService:
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "Please provide a simple, clean, and caring explanation of what is in this image."},
+                            {"type": "text", "text": text_prompt},
                             {
                                 "type": "image_url",
                                 "image_url": {

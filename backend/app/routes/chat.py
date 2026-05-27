@@ -579,15 +579,27 @@ async def send_message_stream(
             image_extensions = ["png", "jpg", "jpeg", "webp", "gif", "bmp"]
             
             if file_ext in image_extensions:
-                try:
-                    collections = [c.name for c in vector_service.client.list_collections()]
-                    if doc.chroma_collection in collections:
-                        coll = vector_service.client.get_collection(name=doc.chroma_collection)
-                        res = coll.get()
-                        if res and "documents" in res and res["documents"]:
-                            doc_text = "\n\n".join(res["documents"])
-                except Exception as e:
-                    logger.error(f"Failed to fetch image description from ChromaDB for {doc.filename}: {str(e)}")
+                if os.path.exists(doc.file_path):
+                    try:
+                        from app.services.vision_service import vision_service
+                        
+                        mime_type = "image/jpeg"
+                        if file_ext == "png": mime_type = "image/png"
+                        elif file_ext == "webp": mime_type = "image/webp"
+                        elif file_ext == "gif": mime_type = "image/gif"
+                        elif file_ext == "bmp": mime_type = "image/bmp"
+                        
+                        with open(doc.file_path, "rb") as f:
+                            image_bytes = f.read()
+                        
+                        analysis_prompt = f"The user is asking: '{rag_query}'. Please look at this image and answer their question based on the visual contents." if rag_query else None
+                        
+                        doc_text = await vision_service.analyze_image(image_bytes, mime_type, prompt=analysis_prompt)
+                    except Exception as e:
+                        logger.error(f"Failed to analyze image dynamically for {doc.filename}: {str(e)}")
+                        doc_text = f"[Failed to analyze image content dynamically: {str(e)}]"
+                else:
+                    doc_text = f"[Image file not found on server disk: {doc.filename}]"
             else:
                 if os.path.exists(doc.file_path):
                     try:

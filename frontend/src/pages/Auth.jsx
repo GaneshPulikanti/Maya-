@@ -16,6 +16,18 @@ export default function Auth() {
       setError("Please fill out all fields.")
       return
     }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      setError("Please enter a valid email address.")
+      return
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long.")
+      return
+    }
+
     setError("")
     setLoading(true)
 
