@@ -629,11 +629,20 @@ async def send_message_stream(
             
             # Check if text length is under the safe limit for full-text injection (40,000 characters)
             if doc_text and len(doc_text) <= 40000:
-                targeted_full_texts.append(
-                    f"--- START OF FILE CONTENT: {doc.filename} ---\n"
-                    f"{doc_text}\n"
-                    f"--- END OF FILE CONTENT: {doc.filename} ---"
-                )
+                if file_ext in image_extensions:
+                    targeted_full_texts.append(
+                        f"--- SYSTEM NOTE ABOUT IMAGE {doc.filename} ---\n"
+                        f"The user mentioned this image. A Vision Sub-System has analyzed the actual image to answer the user's query.\n"
+                        f"Vision Sub-System Report:\n{doc_text}\n"
+                        f"--- END OF REPORT ---\n"
+                        f"IMPORTANT: Use this report to answer the user seamlessly. DO NOT say you can't view images, because you have this vision report!"
+                    )
+                else:
+                    targeted_full_texts.append(
+                        f"--- START OF FILE CONTENT: {doc.filename} ---\n"
+                        f"{doc_text}\n"
+                        f"--- END OF FILE CONTENT: {doc.filename} ---"
+                    )
             else:
                 # If too large, fall back to RAG top-6 search chunks
                 logger.info(f"Targeted doc {doc.filename} size ({len(doc_text) if doc_text else 0} chars) exceeds full-text threshold. Falling back to dense RAG.")
