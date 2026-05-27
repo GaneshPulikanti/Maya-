@@ -579,7 +579,15 @@ async def send_message_stream(
             image_extensions = ["png", "jpg", "jpeg", "webp", "gif", "bmp"]
             
             if file_ext in image_extensions:
-                if os.path.exists(doc.file_path):
+                # Dynamically resolve path to handle cases where DB has paths from different envs (e.g. Render vs local)
+                filename_only = os.path.basename(doc.file_path)
+                static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+                local_file_path = os.path.join(static_dir, "uploads", filename_only)
+                
+                # Check both the exact DB path and the dynamically resolved local path
+                actual_path = doc.file_path if os.path.exists(doc.file_path) else local_file_path
+
+                if os.path.exists(actual_path):
                     try:
                         from app.services.vision_service import vision_service
                         
@@ -589,7 +597,7 @@ async def send_message_stream(
                         elif file_ext == "gif": mime_type = "image/gif"
                         elif file_ext == "bmp": mime_type = "image/bmp"
                         
-                        with open(doc.file_path, "rb") as f:
+                        with open(actual_path, "rb") as f:
                             image_bytes = f.read()
                         
                         analysis_prompt = f"The user is asking: '{rag_query}'. Please look at this image and answer their question based on the visual contents." if rag_query else None
