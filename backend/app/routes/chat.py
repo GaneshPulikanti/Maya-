@@ -579,15 +579,7 @@ async def send_message_stream(
             image_extensions = ["png", "jpg", "jpeg", "webp", "gif", "bmp"]
             
             if file_ext in image_extensions:
-                # Dynamically resolve path to handle cases where DB has paths from different envs (e.g. Render vs local)
-                filename_only = os.path.basename(doc.file_path)
-                static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
-                local_file_path = os.path.join(static_dir, "uploads", filename_only)
-                
-                # Check both the exact DB path and the dynamically resolved local path
-                actual_path = doc.file_path if os.path.exists(doc.file_path) else local_file_path
-
-                if os.path.exists(actual_path):
+                if os.path.exists(doc.file_path):
                     try:
                         from app.services.vision_service import vision_service
                         
@@ -597,7 +589,7 @@ async def send_message_stream(
                         elif file_ext == "gif": mime_type = "image/gif"
                         elif file_ext == "bmp": mime_type = "image/bmp"
                         
-                        with open(actual_path, "rb") as f:
+                        with open(doc.file_path, "rb") as f:
                             image_bytes = f.read()
                         
                         analysis_prompt = f"The user is asking: '{rag_query}'. Please look at this image and answer their question based on the visual contents." if rag_query else None
@@ -637,20 +629,11 @@ async def send_message_stream(
             
             # Check if text length is under the safe limit for full-text injection (40,000 characters)
             if doc_text and len(doc_text) <= 40000:
-                if file_ext in image_extensions:
-                    targeted_full_texts.append(
-                        f"--- SYSTEM NOTE ABOUT IMAGE {doc.filename} ---\n"
-                        f"The user mentioned this image. A Vision Sub-System has analyzed the actual image to answer the user's query.\n"
-                        f"Vision Sub-System Report:\n{doc_text}\n"
-                        f"--- END OF REPORT ---\n"
-                        f"IMPORTANT: Use this report to answer the user seamlessly. DO NOT say you can't view images, because you have this vision report!"
-                    )
-                else:
-                    targeted_full_texts.append(
-                        f"--- START OF FILE CONTENT: {doc.filename} ---\n"
-                        f"{doc_text}\n"
-                        f"--- END OF FILE CONTENT: {doc.filename} ---"
-                    )
+                targeted_full_texts.append(
+                    f"--- START OF FILE CONTENT: {doc.filename} ---\n"
+                    f"{doc_text}\n"
+                    f"--- END OF FILE CONTENT: {doc.filename} ---"
+                )
             else:
                 # If too large, fall back to RAG top-6 search chunks
                 logger.info(f"Targeted doc {doc.filename} size ({len(doc_text) if doc_text else 0} chars) exceeds full-text threshold. Falling back to dense RAG.")
