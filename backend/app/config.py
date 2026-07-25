@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # Security Configuration
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 525600
 
     # LLM API Config
     GROQ_API_KEY: str

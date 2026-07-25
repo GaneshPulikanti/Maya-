@@ -40,7 +40,11 @@ export const AuthProvider = ({ children }) => {
           setUser(response.data)
         } catch (error) {
           console.error("Session restoration failed:", error)
-          logout()
+          // Only log out if the server explicitly returned 401 Unauthorized (invalid/expired token).
+          // Network connection delays or temporary server issues preserve the stored token.
+          if (error.response?.status === 401) {
+            logout()
+          }
         }
       }
       setLoading(false)
