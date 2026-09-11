@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # LLM API Config
     GROQ_API_KEY: str
     PRIMARY_LLM: str = "openai/gpt-oss-120b"
-    BACKUP_LLM: str = "openai/gpt-oss-120b"
+    BACKUP_LLM: str = "openai/gpt-oss-20b"
 
     # RAG / Semantic Memory Config
     EMBEDDING_MODE: str = "api"  # "api" or "local"

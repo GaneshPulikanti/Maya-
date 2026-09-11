@@ -128,7 +128,7 @@ class LLMService:
         )
         
         # Try models in order of speed and reliability for this simple task
-        models_to_try = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", settings.PRIMARY_LLM]
+        models_to_try = [settings.PRIMARY_LLM, settings.BACKUP_LLM, "openai/gpt-oss-20b"]
         
         for model in models_to_try:
             try:
